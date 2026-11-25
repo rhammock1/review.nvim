@@ -99,8 +99,16 @@ local WORKING_FOR = 15 * 60
 ---@param comment review.Comment
 ---@param now? integer
 function M.working(comment, now)
+  return M.working_left(comment, now) > 0
+end
+
+--- Seconds until the working mark counts as stale; 0 when it isn't shown.
+--- A mark more than five minutes in the future (a wrong clock) doesn't count.
+function M.working_left(comment, now)
   local t = epoch(comment.working)
-  return t ~= nil and (now or os.time()) - t < WORKING_FOR
+  local age = t and (now or os.time()) - t
+  if not age or age < -300 then return 0 end
+  return math.max(WORKING_FOR - age, 0)
 end
 
 ---@param m review.Message
@@ -132,9 +140,12 @@ function M.refs(line)
       if not a then break end
       local range = word:match("^%-%d+", b + 1)
       if range then b = b + #range end
-      local path, l1, l2 = word:sub(a, b):match("^(.-):(%d+)%-?(%d*)$")
-      table.insert(out, { first = at + a - 1, last = at + b - 1, path = path,
-        line = tonumber(l1), line_end = tonumber(l2) or tonumber(l1) })
+      -- After a backslash it's the end of a Windows path, which would open the wrong file.
+      if word:sub(a - 1, a - 1) ~= "\\" then
+        local path, l1, l2 = word:sub(a, b):match("^(.-):(%d+)%-?(%d*)$")
+        table.insert(out, { first = at + a - 1, last = at + b - 1, path = path,
+          line = tonumber(l1), line_end = tonumber(l2) or tonumber(l1) })
+      end
       from = b + 1
     end
   end

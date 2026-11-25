@@ -305,7 +305,7 @@ local function resolve(toplevel, ref, cb)
     return cb(path)
   else
     local found = vim.tbl_filter(function(f)
-      return f == path or vim.endswith(f, "/" .. path)
+      return (f == path or vim.endswith(f, "/" .. path)) and vim.uv.fs_stat(toplevel .. "/" .. f) ~= nil
     end, git.files(toplevel))
     table.sort(found)
     if #found == 1 then return cb(found[1]) end
@@ -373,7 +373,7 @@ function M.list(show_resolved)
             return keep_text(body, "that message was already posted")
           end
           save(s)
-        end, target.body)
+        end, target.body, { key = "edit " .. c.id .. " " .. target.id })
       end)
     end,
     delete = function(c)

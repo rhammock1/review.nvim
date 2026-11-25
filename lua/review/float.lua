@@ -432,6 +432,12 @@ local function show_thread(s, follow)
     })
   end
   draw_thread(s)
+  -- Nothing else redraws when an agent's working mark gets too old.
+  if s.comment.working and thread.working(s.comment) then
+    vim.defer_fn(function()
+      if M.state == s and valid(s.thread_win) and not thread.working(s.comment) then draw_thread(s) apply_layout(s) end
+    end, math.max(thread.working_left(s.comment) * 1000 + 200, 200))
+  end
   relocate(s)
   draw_range(s)
   apply_layout(s, follow)
@@ -463,14 +469,13 @@ end
 
 --- Where unsent text for this popup is kept: per repo and comment, or per
 --- lines for a new comment.
-drafts_key = function(ctx, comment, initial)
-  local where = comment and ("comment " .. comment.id)
-    or string.format("%s %s:%d-%d", (initial or "") ~= "" and "edit " .. vim.fn.sha256(initial) or "new",
-      ctx.path, ctx.line_start, ctx.line_end) .. " " .. tostring(ctx.side)
+drafts_key = function(ctx, comment, key)
+  local where = comment and ("comment " .. comment.id) or key
+    or string.format("new %s:%d-%d %s", ctx.path, ctx.line_start, ctx.line_end, tostring(ctx.side))
   return tostring(ctx.toplevel) .. "\0" .. where
 end
 
-local function open(ctx, comment, on_submit, initial)
+local function open(ctx, comment, on_submit, initial, opts)
   local prev = M.state
   if prev and comment and prev.comment and prev.comment.id == comment.id and valid(prev.input_win) then
     return api.nvim_set_current_win(prev.input_win)
@@ -526,7 +531,7 @@ local function open(ctx, comment, on_submit, initial)
   end
 
   s.input_buf = scratch()
-  s.draft_key = drafts_key(ctx, s.comment, initial)
+  s.draft_key = drafts_key(ctx, s.comment, opts and opts.key)
   local restored = drafts.load(s.draft_key)
   local text = restored or initial
   if text and text ~= "" then
@@ -605,8 +610,9 @@ end
 ---@param ctx review.Ctx
 ---@param on_submit fun(body: string, post: boolean): review.Comment|nil the posted comment, to keep it open
 ---@param initial? string
-function M.open_new(ctx, on_submit, initial)
-  open(ctx, nil, on_submit, initial)
+---@param opts? { key?: string } names what's being edited, so unsent text comes back to it
+function M.open_new(ctx, on_submit, initial, opts)
+  open(ctx, nil, on_submit, initial, opts)
 end
 
 ---@param ctx review.Ctx

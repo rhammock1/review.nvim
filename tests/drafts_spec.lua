@@ -128,4 +128,78 @@ describe("drafts", function()
     float.open_new(ctx, submit)
     assert.same({ "" }, input())
   end)
+
+  it("keeps edits of different comments apart even with the same text", function()
+    float.open_new(ctx, submit, "nit", { key = "edit c_1 m_1" })
+    vim.cmd("stopinsert")
+    type_text("nit: rename this")
+    crash()
+    float.open_new(ctx, submit, "nit", { key = "edit c_2 m_2" })
+    assert.same({ "nit" }, input())
+    float.close()
+    assert.equals(1, #files())
+    float.open_new(ctx, submit, "nit", { key = "edit c_1 m_1" })
+    assert.same({ "nit: rename this" }, input())
+  end)
+
+  it("leaves another running Neovim's text alone", function()
+    local me = drafts.pid
+    drafts.pid = 1 -- always running, and not us
+    float.open_new(ctx, submit)
+    type_text("theirs")
+    crash()
+    drafts.pid = me
+    float.open_new(ctx, submit)
+    assert.same({ "" }, input())
+    type_text("mine")
+    float.close()
+    drafts.flush()
+    assert.equals(1, #files())
+    float.open_new(ctx, submit)
+    assert.same({ "" }, input())
+  end)
+
+  it("takes over text from a Neovim that has exited", function()
+    local me, gone = drafts.pid, 4194000
+    while vim.uv.kill(gone, 0) == 0 do gone = gone + 1 end
+    drafts.pid = gone
+    float.open_new(ctx, submit)
+    type_text("left behind")
+    crash()
+    drafts.pid = me
+    float.open_new(ctx, submit)
+    assert.same({ "left behind" }, input())
+    vim.cmd("stopinsert")
+    feed("<CR>")
+    drafts.flush()
+    assert.same({}, files())
+  end)
+
+  it("clears out old copies of anything", function()
+    vim.fn.mkdir(drafts.dir, "p")
+    h.write(drafts.dir .. "/old-1.json", vim.json.encode({ text = "x", at = os.time() - 20 * 86400, pid = 1 }))
+    h.write(drafts.dir .. "/new-1.json", vim.json.encode({ text = "x", at = os.time(), pid = 1 }))
+    drafts.sweep()
+    assert.same({ drafts.dir .. "/new-1.json" }, files())
+  end)
+
+  it("saves during steady typing, not only after a pause", function()
+    float.open_new(ctx, submit)
+    local start = vim.uv.now()
+    local saved
+    while vim.uv.now() - start < 3000 and not saved do
+      vim.api.nvim_buf_set_lines(float.state.input_buf, 0, -1, false, { "typing " .. vim.uv.now() })
+      vim.api.nvim_exec_autocmds("TextChanged", { buffer = float.state.input_buf })
+      vim.wait(100)
+      saved = #files() > 0
+    end
+    assert.is_true(saved)
+  end)
+
+  it("keeps copies private", function()
+    float.open_new(ctx, submit)
+    type_text("secret")
+    assert.equals(tonumber("700", 8), bit.band(vim.uv.fs_stat(drafts.dir).mode, tonumber("777", 8)))
+    assert.equals(tonumber("600", 8), bit.band(vim.uv.fs_stat(files()[1]).mode, tonumber("777", 8)))
+  end)
 end)

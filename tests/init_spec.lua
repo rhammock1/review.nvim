@@ -489,4 +489,47 @@ describe("review (wiring)", function()
     assert.falsy(text():find("working", 1, true))
     assert.is_nil(store.read(path).comments[1].working)
   end)
+
+  it("restores a picker edit into the same comment only", function()
+    local drafts = require("review.drafts")
+    drafts.dir = vim.fn.tempname()
+    for _ = 1, 2 do
+      vim.cmd("4,5ReviewComment")
+      feed("init<C-s>")
+      vim.cmd("stopinsert")
+    end
+    local actions
+    local picker = package.loaded["review.picker"]
+    package.loaded["review.picker"] = { open = function(_, a) actions = a end }
+    review.list()
+    package.loaded["review.picker"] = picker
+    local cs = review._session(repo).review.comments
+    actions.edit(cs[1])
+    vim.api.nvim_buf_set_lines(float.state.input_buf, 0, -1, false, { "nit: rename this" })
+    vim.api.nvim_exec_autocmds("TextChanged", { buffer = float.state.input_buf })
+    drafts.flush()
+    local s = float.state
+    float.state = nil
+    pcall(vim.api.nvim_del_augroup_by_id, s.augroup)
+    pcall(vim.api.nvim_win_close, s.input_win, true)
+    actions.edit(cs[2])
+    assert.same({ "nit" }, vim.api.nvim_buf_get_lines(float.state.input_buf, 0, -1, false))
+    float.close()
+    actions.edit(cs[1])
+    assert.same({ "nit: rename this" }, vim.api.nvim_buf_get_lines(float.state.input_buf, 0, -1, false))
+  end)
+
+  it("doesn't offer files that were deleted", function()
+    vim.fn.mkdir(repo .. "/sub", "p")
+    vim.fn.writefile({ "1" }, repo .. "/sub/gone.txt")
+    h.sh({ "git", "add", "." }, repo)
+    os.remove(repo .. "/sub/gone.txt")
+    thread_with("see gone.txt:1", "gone.txt:1")
+    local said, notify = {}, vim.notify
+    vim.notify = function(m) table.insert(said, m) end
+    feed("gf")
+    vim.notify = notify
+    assert.truthy(said[1] and said[1]:find("gone.txt", 1, true))
+    assert.equals(float.state.thread_win, vim.api.nvim_get_current_win())
+  end)
 end)

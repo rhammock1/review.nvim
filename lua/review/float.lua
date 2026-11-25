@@ -1,5 +1,6 @@
 local anchor = require("review.anchor")
 local config = require("review.config")
+local drafts = require("review.drafts")
 local export = require("review.export")
 local model = require("review.model")
 local thread = require("review.thread")
@@ -18,6 +19,8 @@ local M = {}
 ---@field pinned? boolean stays open when the cursor leaves (after posting)
 ---@field width? integer
 ---@field above? boolean
+---@field draft_key string where unsent text is kept between sessions
+---@field keep_draft? boolean the popup was closed by something else; keep the copy
 ---@type review.Popup|nil
 M.state = nil
 
@@ -29,6 +32,8 @@ local FULL = { "╭", "─", "╮", "│", "╯", "─", "╰", "│" }
 -- The thread's bottom edge is the divider; the reply box under it has no top.
 local TOP = { "╭", "─", "╮", "│", "┤", "─", "├", "│" }
 local BOTTOM = { "", "", "", "│", "╯", "─", "╰", "│" }
+
+local drafts_key
 
 local STATUS = { PENDING = "Draft", POSTED = "Posted", RESPONDED = "Replied", RESOLVED = "Resolved" }
 
@@ -59,6 +64,11 @@ function M.close()
   if not s then return end
   M.state = nil
   local inside = focused(s)
+  if s.keep_draft then
+    drafts.flush()
+  else
+    drafts.clear(s.draft_key)
+  end
   pcall(api.nvim_del_augroup_by_id, s.augroup)
   pcall(api.nvim_buf_clear_namespace, s.ctx.bufnr, ns, 0, -1)
   for _, w in ipairs({ s.input_win, s.thread_win }) do
@@ -434,6 +444,15 @@ local function scroll(s, dir)
   draw_divider(s)
 end
 
+--- Where unsent text for this popup is kept: per repo and comment, or per
+--- lines for a new comment.
+drafts_key = function(ctx, comment, initial)
+  local where = comment and ("comment " .. comment.id)
+    or string.format("%s %s:%d-%d", (initial or "") ~= "" and "edit " .. vim.fn.sha256(initial) or "new",
+      ctx.path, ctx.line_start, ctx.line_end) .. " " .. tostring(ctx.side)
+  return tostring(ctx.toplevel) .. "\0" .. where
+end
+
 local function open(ctx, comment, on_submit, initial)
   local prev = M.state
   if prev and comment and prev.comment and prev.comment.id == comment.id and valid(prev.input_win) then
@@ -465,6 +484,7 @@ local function open(ctx, comment, on_submit, initial)
       vim.notify("review: empty comment", vim.log.levels.WARN)
       return
     end
+    drafts.clear(s.draft_key)
     if not post then
       M.close()
       on_submit(body, false)
@@ -475,6 +495,7 @@ local function open(ctx, comment, on_submit, initial)
     if M.state ~= s then return end
     if not posted or not valid(s.input_win) or not valid(s.ctx.winid) then return M.close() end
     s.comment, s.initial, s.pinned = vim.deepcopy(posted), "", true
+    s.draft_key = drafts_key(ctx, s.comment, nil)
     api.nvim_buf_set_lines(s.input_buf, 0, -1, false, { "" })
     draw_placeholder(s)
     show_thread(s, true)
@@ -488,9 +509,13 @@ local function open(ctx, comment, on_submit, initial)
   end
 
   s.input_buf = scratch()
-  if initial and initial ~= "" then
-    api.nvim_buf_set_lines(s.input_buf, 0, -1, false, vim.split(initial, "\n", { plain = true }))
+  s.draft_key = drafts_key(ctx, s.comment, initial)
+  local restored = drafts.load(s.draft_key)
+  local text = restored or initial
+  if text and text ~= "" then
+    api.nvim_buf_set_lines(s.input_buf, 0, -1, false, vim.split(text, "\n", { plain = true }))
   end
+  if restored then vim.notify("review: restored text you hadn't sent") end
   s.input_win = open_win(s, s.input_buf, true, FULL)
   M.win_options(s.input_win, { statuscolumn = " " }) -- lines the text up with the thread
 
@@ -514,6 +539,7 @@ local function open(ctx, comment, on_submit, initial)
     api.nvim_create_autocmd(events, vim.tbl_extend("force", { group = s.augroup, callback = callback }, opts))
   end
   on({ "TextChanged", "TextChangedI", "TextChangedP" }, { buffer = s.input_buf }, function()
+    drafts.save(s.draft_key, has_draft(s) and body_of(s.input_buf) or "")
     draw_placeholder(s)
     apply_layout(s)
   end)
@@ -537,6 +563,8 @@ local function open(ctx, comment, on_submit, initial)
   -- :q, :only and :tabclose skip our own close; don't lose what was typed.
   on("WinClosed", { pattern = tostring(s.input_win) }, function()
     if M.state ~= s or not has_draft(s) then return end
+    s.keep_draft = true
+    drafts.save(s.draft_key, body_of(s.input_buf))
     vim.fn.setreg('"', body_of(s.input_buf))
     vim.notify("review: popup closed; your text is in the unnamed register (paste with p)", vim.log.levels.WARN)
   end)
@@ -549,7 +577,12 @@ local function open(ctx, comment, on_submit, initial)
     end)
   end)
 
-  if not initial or initial == "" then vim.cmd("startinsert") end
+  if restored then
+    api.nvim_win_set_cursor(s.input_win, { api.nvim_buf_line_count(s.input_buf), 0 })
+    vim.cmd("startinsert!")
+  elseif not initial or initial == "" then
+    vim.cmd("startinsert")
+  end
 end
 
 ---@param ctx review.Ctx

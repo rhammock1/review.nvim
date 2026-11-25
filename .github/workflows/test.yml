@@ -1,0 +1,57 @@
+name: tests
+
+# Runs only when code or tests change on main, or by hand from the Actions tab.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "lua/**"
+      - "plugin/**"
+      - "skills/**"
+      - "tests/**"
+      - "run_tests.sh"
+      - ".github/workflows/test.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Neovim ${{ matrix.nvim }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        nvim: [v0.11.7, stable] # the oldest supported, and the current release
+    env:
+      REVIEW_TEST_DEPS: ${{ github.workspace }}/../deps
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install Neovim
+        run: |
+          curl -fsSL "https://github.com/neovim/neovim/releases/download/${{ matrix.nvim }}/nvim-linux-x86_64.tar.gz" \
+            | tar xz -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/nvim-linux-x86_64/bin" >> "$GITHUB_PATH"
+
+      - name: Install plugins the tests use
+        run: |
+          fetch() { # repo commit
+            dir="$REVIEW_TEST_DEPS/${1#*/}"
+            git init -q "$dir"
+            git -C "$dir" fetch -q --depth 1 "https://github.com/$1" "$2"
+            git -C "$dir" checkout -q FETCH_HEAD
+          }
+          fetch nvim-lua/plenary.nvim 74b06c6c75e4eeb3108ec01852001636d85a932b
+          fetch nvim-telescope/telescope.nvim 1e1bab730218eaf97fce743be3f56e51075928ac
+          fetch sindrets/diffview.nvim 4516612fe98ff56ae0415a259ff6361a89419b0a
+
+      - run: nvim --version | head -1
+      - run: ./run_tests.sh
+      - run: bash tests/review_watch_test.sh

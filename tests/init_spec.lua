@@ -108,6 +108,45 @@ describe("review (wiring)", function()
     assert.equals("second", d.comments[2].thread[1].body)
   end)
 
+  it("records the diff base from the first comment that knows it", function()
+    local context = require("review.context")
+    local real = context.current
+    context.current = function(range)
+      local ctx = real(range)
+      if ctx then ctx.base = "basesha" end
+      return ctx
+    end
+    vim.wait(50) -- let setup's startup session (no base) load first, as in real use
+    review.comment()
+    feed("iwith base<C-p>")
+    context.current = real
+    assert.equals("basesha", store.read(current_file()).base)
+  end)
+
+  it("jump falls back to the real file when diffview doesn't list it", function()
+    review.comment()
+    feed("ijump me<C-p>")
+    local s = review._session(repo)
+    local c = s.review.comments[1]
+    local set_called = false
+    local fake_view = {
+      adapter = { ctx = { toplevel = repo } },
+      files = { iter = function() return function() return nil end end },
+      set_file_by_path = function() set_called = true end,
+      cur_layout = {},
+    }
+    local saved = package.loaded["diffview.lib"]
+    package.loaded["diffview.lib"] = { get_current_view = function() return fake_view end, views = {} }
+    vim.cmd("enew")
+    local landed = false
+    review._jump(s, c, function() landed = true end)
+    package.loaded["diffview.lib"] = saved
+    assert.is_true(vim.wait(1500, function() return landed end, 20))
+    assert.is_false(set_called)
+    assert.equals("a.txt", vim.fn.expand("%:t"))
+    assert.equals(3, vim.api.nvim_win_get_cursor(0)[1])
+  end)
+
   it("resolve under cursor", function()
     review.comment()
     feed("ix<C-p>")

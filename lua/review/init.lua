@@ -131,6 +131,7 @@ function M.comment(range)
     if existing then return open_thread(s, ctx, existing) end
   end
   float.open_new(ctx, function(body, post)
+    if not s.review.base and ctx.base then s.review.base = ctx.base end
     table.insert(s.review.comments, model.new_comment(ctx, body, post))
     save(s)
   end)
@@ -179,38 +180,57 @@ function M.export()
   if s then export.run(s.review) end
 end
 
---- Put the cursor on a comment: inside an open diffview for the repo when
---- there is one, otherwise in the real file.
-local function jump(s, c, after)
-  local lib = package.loaded["diffview.lib"]
-  local view = lib and lib.get_current_view()
-  if view and view.adapter and view.adapter.ctx.toplevel == s.toplevel and view.set_file_by_path then
-    view:set_file_by_path(c.path, true, true)
-    local tries = 0
-    local function land()
-      tries = tries + 1
-      local layout = view.cur_layout
-      local w = layout and (c.side == "old" and layout.a or layout.b)
-      local ready = w and w.file and w.file.path == c.path and vim.api.nvim_win_is_valid(w.id)
-        and vim.api.nvim_win_get_buf(w.id) == w.file.bufnr
-      if not ready then
-        if tries < 40 then vim.defer_fn(land, 25) end
-        return
-      end
-      vim.api.nvim_set_current_win(w.id)
-      local loc = anchor.locate(vim.api.nvim_buf_get_lines(w.file.bufnr, 0, -1, false), c)
-      vim.api.nvim_win_set_cursor(w.id, { loc.start, 0 })
-      vim.cmd("normal! zz")
-      if after then after() end
-    end
-    return land()
+--- Does this diffview view list `path` among its files?
+local function view_has(view, path)
+  if not (view.files and view.files.iter) then return false end
+  for _, f in view.files:iter() do
+    if f.path == path then return true end
   end
+  return false
+end
+
+local function jump_to_file(s, c, after)
   vim.cmd("edit " .. vim.fn.fnameescape(s.toplevel .. "/" .. c.path))
   local loc = anchor.locate(vim.api.nvim_buf_get_lines(0, 0, -1, false), c)
   vim.api.nvim_win_set_cursor(0, { loc.start, 0 })
   vim.cmd("normal! zz")
   marks.refresh(0, s.review, s.toplevel)
   if after then after() end
+end
+
+--- Put the cursor on a comment: inside an open diffview for the repo when it
+--- lists the file, otherwise in the real file.
+local function jump(s, c, after)
+  local lib = package.loaded["diffview.lib"]
+  local view = lib and lib.get_current_view()
+  if not (view and view.adapter and view.adapter.ctx.toplevel == s.toplevel
+          and view.set_file_by_path and view_has(view, c.path)) then
+    return jump_to_file(s, c, after)
+  end
+  view:set_file_by_path(c.path, true, true)
+  local tries = 0
+  local function land()
+    tries = tries + 1
+    local layout = view.cur_layout
+    local w = layout and (c.side == "old" and layout.a or layout.b)
+    local ready = w and w.file and w.file.path == c.path and vim.api.nvim_win_is_valid(w.id)
+      and vim.api.nvim_win_get_buf(w.id) == w.file.bufnr
+    if not ready then
+      if tries < 40 then
+        vim.defer_fn(land, 25)
+      else
+        notify("couldn't open " .. c.path .. " in diffview; opening the file instead")
+        jump_to_file(s, c, after)
+      end
+      return
+    end
+    vim.api.nvim_set_current_win(w.id)
+    local loc = anchor.locate(vim.api.nvim_buf_get_lines(w.file.bufnr, 0, -1, false), c)
+    vim.api.nvim_win_set_cursor(w.id, { loc.start, 0 })
+    vim.cmd("normal! zz")
+    if after then after() end
+  end
+  land()
 end
 
 function M.list(show_resolved)
@@ -315,6 +335,10 @@ function M.setup(opts)
     end
   end)
 end
+
+-- Test hooks.
+M._jump = jump
+function M._session(toplevel) return sessions[toplevel] end
 
 --- Test helper: forget all sessions and stop watching.
 function M._reset()

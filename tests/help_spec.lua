@@ -64,4 +64,61 @@ describe("help", function()
     assert.same({ "my draft" }, vim.api.nvim_buf_get_lines(input_buf, 0, -1, false))
     float.close()
   end)
+
+  it("describes the save key according to post_on_submit", function()
+    assert.truthy(text():find("Save as pending draft", 1, true))
+    config.setup({ post_on_submit = true })
+    assert.falsy(text():find("Save as pending draft", 1, true))
+  end)
+
+  it("omits float keys and signs that are turned off", function()
+    config.setup({ float_keymaps = { save_insert = {}, post = false }, signs = { POSTED = false } })
+    local t = text()
+    assert.falsy(t:find("(insert)", 1, true))
+    assert.falsy(t:find("Post now", 1, true))
+    assert.falsy(t:find("posted", 1, true))
+    assert.truthy(t:find("◆ responded", 1, true))
+    config.setup({ float_keymaps = false, signs = false, keymaps = false })
+    t = text()
+    assert.falsy(t:find("In the comment popup", 1, true))
+    assert.falsy(t:find("pending  ", 1, true))
+    assert.truthy(t:find(":ReviewComment", 1, true))
+  end)
+
+  it("only claims a visual mapping for comments", function()
+    local t = text()
+    assert.falsy(t:find("Anywhere (on a line or visual selection)", 1, true))
+    assert.truthy(t:find("New comment on a line or selection", 1, true))
+  end)
+
+  it("opens on a tiny screen and wraps at words", function()
+    local lines, cols = vim.o.lines, vim.o.columns
+    for _, size in ipairs({ { 3, 12 }, { 4, 20 }, { 10, 40 } }) do
+      vim.o.lines, vim.o.columns = size[1], size[2]
+      local win = help.open()
+      assert.is_true(vim.wo[win].linebreak)
+      vim.api.nvim_win_close(win, true)
+    end
+    vim.o.lines, vim.o.columns = lines, cols
+  end)
+
+  it("returns to insert mode when opened with <C-o> from insert", function()
+    local root = vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":p:h:h")
+    local chan = vim.fn.jobstart({ vim.v.progpath, "--embed", "--headless", "--clean",
+      "--cmd", "set rtp^=" .. root, "-c", "lua require('review').setup()" }, { rpc = true })
+    local function req(...) return vim.rpcrequest(chan, ...) end
+    local function mode() return req("nvim_get_mode").mode end
+    req("nvim_input", "iabc<C-o>:ReviewHelp<CR>")
+    vim.wait(1000, function() return #req("nvim_list_wins") == 2 and mode() == "n" end)
+    assert.equals(2, #req("nvim_list_wins"))
+    assert.equals("n", mode())
+    req("nvim_input", "q")
+    vim.wait(1000, function() return #req("nvim_list_wins") == 1 and mode() == "i" end)
+    assert.equals(1, #req("nvim_list_wins"))
+    assert.equals("i", mode())
+    req("nvim_input", "d")
+    vim.wait(1000, function() return req("nvim_get_current_line") == "abcd" end)
+    assert.equals("abcd", req("nvim_get_current_line"))
+    vim.fn.jobstop(chan)
+  end)
 end)

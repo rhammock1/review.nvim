@@ -96,4 +96,99 @@ describe("float", function()
     assert.is_nil(float.state)
     assert.is_false(vim.api.nvim_win_is_valid(tw))
   end)
+
+  it("leaving the input keeps an unsaved draft open", function()
+    float.open_new(ctx, submit)
+    local win, buf = float.state.input_win, float.state.input_buf
+    vim.cmd("stopinsert")
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "my draft" })
+    vim.api.nvim_set_current_win(ctx.winid)
+    assert.is_true(vim.api.nvim_win_is_valid(win))
+    vim.api.nvim_set_current_win(win)
+    feed("<CR>")
+    assert.same({ { "my draft", false } }, calls)
+    assert.is_nil(float.state)
+  end)
+
+  it("opening another popup returns to an unsaved draft instead of dropping it", function()
+    float.open_new(ctx, submit)
+    local win, buf = float.state.input_win, float.state.input_buf
+    vim.cmd("stopinsert")
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "my draft" })
+    vim.api.nvim_set_current_win(ctx.winid)
+    float.open_new(ctx, submit)
+    assert.equals(win, float.state.input_win)
+    assert.equals(win, vim.api.nvim_get_current_win())
+    assert.same({ "my draft" }, vim.api.nvim_buf_get_lines(buf, 0, -1, false))
+  end)
+
+  it("leaving an unchanged edit closes it", function()
+    float.open_new(ctx, submit, "old text")
+    vim.api.nvim_set_current_win(ctx.winid)
+    assert.is_nil(float.state)
+  end)
+
+  it("cancel from the thread window asks before dropping a draft", function()
+    local comment = { id = "c_1", status = "POSTED", path = "a.txt", side = "new", line_start = 2, line_end = 4,
+      thread = { { id = "m_1", author = "user", body = "q?", at = "1" } } }
+    float.open_thread(ctx, comment, submit)
+    vim.cmd("stopinsert")
+    vim.api.nvim_buf_set_lines(float.state.input_buf, 0, -1, false, { "reply" })
+    vim.api.nvim_set_current_win(float.state.thread_win)
+    local confirm, asked = vim.fn.confirm, 0
+    vim.fn.confirm = function() asked = asked + 1 return 2 end
+    feed("q")
+    vim.fn.confirm = confirm
+    assert.equals(1, asked)
+    assert.truthy(float.state)
+  end)
+
+  it("opens a fresh popup after the draft's window was closed some other way", function()
+    float.open_new(ctx, submit)
+    vim.cmd("stopinsert")
+    vim.api.nvim_buf_set_lines(float.state.input_buf, 0, -1, false, { "my draft" })
+    vim.cmd("close")
+    float.open_new(ctx, submit)
+    assert.equals(float.state.input_win, vim.api.nvim_get_current_win())
+  end)
+
+  it("typing in a draft is fine after its file window closed", function()
+    vim.cmd("vsplit")
+    ctx = assert(context.current({ 2, 4 }))
+    local other = vim.fn.win_getid(vim.fn.winnr("#"))
+    float.open_new(ctx, submit)
+    local win, buf = float.state.input_win, float.state.input_buf
+    vim.cmd("stopinsert")
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "my draft" })
+    vim.api.nvim_set_current_win(other)
+    vim.api.nvim_win_close(ctx.winid, true)
+    assert.is_true(vim.api.nvim_win_is_valid(win))
+    vim.api.nvim_set_current_win(win)
+    vim.v.errmsg = ""
+    pcall(vim.api.nvim_exec_autocmds, "TextChanged", { buffer = buf })
+    assert.equals("", vim.v.errmsg)
+    feed("<CR>")
+    assert.same({ { "my draft", false } }, calls)
+  end)
+
+  it("typing a reply is fine after the thread window closed", function()
+    local comment = { id = "c_1", status = "POSTED", path = "a.txt", side = "new", line_start = 2, line_end = 4,
+      thread = { { id = "m_1", author = "user", body = "q?", at = "1" } } }
+    float.open_thread(ctx, comment, submit)
+    vim.cmd("stopinsert")
+    local buf = float.state.input_buf
+    vim.api.nvim_win_close(float.state.thread_win, true)
+    vim.v.errmsg = ""
+    pcall(vim.api.nvim_exec_autocmds, "TextChanged", { buffer = buf })
+    assert.equals("", vim.v.errmsg)
+  end)
+
+  it("can't be replaced by another file", function()
+    float.open_new(ctx, submit)
+    local buf = float.state.input_buf
+    vim.cmd("stopinsert")
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "my draft" })
+    assert.is_false(pcall(vim.cmd, "edit " .. repo .. "/a.txt"))
+    assert.same({ "my draft" }, vim.api.nvim_buf_get_lines(buf, 0, -1, false))
+  end)
 end)

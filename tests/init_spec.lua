@@ -169,4 +169,55 @@ describe("review (wiring)", function()
     review.setup({ keymaps = { export = false } })
     assert.equals("", vim.fn.maparg("<leader>re", "n"))
   end)
+
+  it("list from a popup with a draft returns to the draft", function()
+    review.comment()
+    feed("ifirst<C-p>")
+    for _, from in ipairs({ "input_win", "thread_win" }) do
+      review.comment()
+      vim.cmd("stopinsert")
+      local win, buf = float.state.input_win, float.state.input_buf
+      vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "my draft" })
+      vim.api.nvim_set_current_win(float.state[from])
+      local opened = false
+      local picker = package.loaded["review.picker"]
+      package.loaded["review.picker"] = { open = function() opened = true end }
+      review.list()
+      package.loaded["review.picker"] = picker
+      assert.is_false(opened)
+      assert.equals(win, vim.api.nvim_get_current_win())
+      assert.same({ "my draft" }, vim.api.nvim_buf_get_lines(buf, 0, -1, false))
+      float.close()
+    end
+  end)
+
+  it("keeps reply text when the comment is gone", function()
+    review.comment()
+    feed("ifirst<C-p>")
+    review.comment()
+    local path = current_file()
+    require("review.model").delete(review._session(repo).review.comments[1])
+    vim.fn.setreg('"', "")
+    feed("ilate reply<C-p>")
+    assert.equals("late reply", vim.fn.getreg('"'))
+    assert.equals(1, #store.read(path).comments[1].thread)
+  end)
+
+  it("keeps edited text when the comment was posted meanwhile", function()
+    review.comment()
+    feed("ifirst<Esc><CR>")
+    local edit
+    local picker = package.loaded["review.picker"]
+    package.loaded["review.picker"] = { open = function(_, actions) edit = actions.edit end }
+    review.list()
+    package.loaded["review.picker"] = picker
+    edit(review._session(repo).review.comments[1])
+    assert.truthy(float.state)
+    review._session(repo).review.comments[1].status = "POSTED"
+    vim.api.nvim_buf_set_lines(float.state.input_buf, 0, -1, false, { "changed" })
+    vim.fn.setreg('"', "")
+    feed("<CR>")
+    assert.equals("changed", vim.fn.getreg('"'))
+    assert.equals("first", review._session(repo).review.comments[1].thread[1].body)
+  end)
 end)

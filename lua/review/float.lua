@@ -3,7 +3,7 @@ local export = require("review.export")
 
 local M = {}
 
----@type { input_buf: integer, input_win: integer, thread_win?: integer, thread_buf?: integer, augroup: integer }|nil
+---@type { input_buf: integer, input_win: integer, thread_win?: integer, thread_buf?: integer, augroup: integer, initial: string }|nil
 M.state = nil
 
 local MAX_HEIGHT = 15
@@ -25,6 +25,27 @@ end
 local function body_of(buf)
   local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
   return vim.trim(table.concat(lines, "\n"))
+end
+
+--- Does the popup hold text that hasn't been saved?
+local function has_draft(s)
+  return s.input_win ~= nil and vim.api.nvim_win_is_valid(s.input_win)
+    and vim.api.nvim_buf_is_valid(s.input_buf)
+    and body_of(s.input_buf) ~= s.initial
+end
+
+local function return_to_draft()
+  vim.notify("review: save or cancel this comment first", vim.log.levels.WARN)
+  vim.api.nvim_set_current_win(M.state.input_win)
+end
+
+--- When the cursor is in a popup with unsaved text, stay there. Returns whether it did.
+---@return boolean
+function M.hold_draft()
+  local s, w = M.state, vim.api.nvim_get_current_win()
+  if not s or not has_draft(s) or (w ~= s.input_win and w ~= s.thread_win) then return false end
+  return_to_draft()
+  return true
 end
 
 local function first_key(list)
@@ -69,7 +90,8 @@ end
 
 local function apply_layout(ctx)
   local s = M.state
-  if not s then return end
+  if not s or not vim.api.nvim_win_is_valid(ctx.winid) then return end
+  if s.thread_win and not vim.api.nvim_win_is_valid(s.thread_win) then s.thread_win = nil end
   local width = math.min(80, vim.api.nvim_win_get_width(ctx.winid) - 4)
   local thread_h = 0
   if s.thread_win then
@@ -94,13 +116,17 @@ local function scratch(ft)
 end
 
 local function open(ctx, comment, on_submit, initial)
+  if M.state and has_draft(M.state) then return return_to_draft() end
   M.close()
   local km = config.options.float_keymaps
   local width = math.min(80, vim.api.nvim_win_get_width(ctx.winid) - 4)
   local base = { relative = "win", win = ctx.winid, bufpos = { ctx.line_end - 1, 0 }, row = 1, col = 0,
                  width = width, height = 3, style = "minimal", border = "rounded" }
 
-  local state = { augroup = vim.api.nvim_create_augroup("review_float", { clear = true }) }
+  local state = {
+    augroup = vim.api.nvim_create_augroup("review_float", { clear = true }),
+    initial = vim.trim(initial or ""),
+  }
   M.state = state
 
   if comment then
@@ -112,6 +138,7 @@ local function open(ctx, comment, on_submit, initial)
       focusable = true,
     }))
     vim.wo[state.thread_win].wrap = true
+    vim.wo[state.thread_win].winfixbuf = true
   end
 
   state.input_buf = scratch("markdown")
@@ -125,6 +152,7 @@ local function open(ctx, comment, on_submit, initial)
     footer_pos = "right",
   }))
   vim.wo[state.input_win].wrap = true
+  vim.wo[state.input_win].winfixbuf = true
   apply_layout(ctx)
 
   local function submit(post)
@@ -151,7 +179,7 @@ local function open(ctx, comment, on_submit, initial)
   for _, k in ipairs(km.post or {}) do vim.keymap.set({ "n", "i" }, k, function() submit(true) end, o) end
   for _, k in ipairs(km.cancel or {}) do vim.keymap.set("n", k, cancel, o) end
   if state.thread_buf then
-    for _, k in ipairs(km.cancel or {}) do vim.keymap.set("n", k, M.close, { buffer = state.thread_buf, nowait = true }) end
+    for _, k in ipairs(km.cancel or {}) do vim.keymap.set("n", k, cancel, { buffer = state.thread_buf, nowait = true }) end
   end
 
   vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI" }, {
@@ -163,7 +191,9 @@ local function open(ctx, comment, on_submit, initial)
     callback = function()
       local w = vim.api.nvim_get_current_win()
       if vim.w[w].review_help then return end
-      if M.state == state and w ~= state.input_win and w ~= state.thread_win then M.close() end
+      if M.state ~= state or w == state.input_win or w == state.thread_win then return end
+      -- Unsaved text stays open so leaving the popup can't lose it.
+      if not has_draft(state) then M.close() end
     end,
   })
 

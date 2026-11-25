@@ -48,8 +48,9 @@ function M.refresh(bufnr, review, toplevel)
   vim.api.nvim_buf_clear_namespace(bufnr, M.ns, 0, -1)
   for _, item in ipairs(located(bufnr, review, toplevel)) do
     local c = item.comment
+    local sign = config.options.signs[c.status] or "?"
     pcall(vim.api.nvim_buf_set_extmark, bufnr, M.ns, item.loc.start - 1, 0, {
-      sign_text = config.options.signs[c.status] or "?",
+      sign_text = sign ~= "" and sign or nil,
       sign_hl_group = "Review" .. c.status,
       virt_text = { { label(c, item.loc.moved), "Comment" } },
       virt_text_pos = "eol",

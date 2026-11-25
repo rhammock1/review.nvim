@@ -108,9 +108,16 @@ local function comment_under_cursor(s)
   return marks.comment_at(0, lnum, s.review, s.toplevel)
 end
 
+--- Don't lose text that can no longer be saved where it was meant to go.
+local function keep_text(body, why)
+  vim.fn.setreg('"', body)
+  notify(why .. "; your text is in the unnamed register (paste with p)", vim.log.levels.WARN)
+end
+
 local function open_thread(s, ctx, c)
   float.open_thread(ctx, c, function(body, post)
-    local live = model.find(s.review, c.id) or c
+    local live = model.find(s.review, c.id)
+    if not live or live.deleted then return keep_text(body, "that comment is gone") end
     model.reply(live, body, post)
     save(s)
   end)
@@ -234,6 +241,7 @@ local function jump(s, c, after)
 end
 
 function M.list(show_resolved)
+  if float.hold_draft() then return end
   local s = current_session()
   if not s then return end
   local function live(c) return model.find(s.review, c.id) or c end
@@ -257,7 +265,11 @@ function M.list(show_resolved)
         local ctx = context.current()
         if not ctx then return end
         float.open_new(ctx, function(body)
-          model.edit_message(live(c), target.id, body)
+          local found = model.find(s.review, c.id)
+          if not found or found.deleted then return keep_text(body, "that comment is gone") end
+          if not model.edit_message(found, target.id, body) then
+            return keep_text(body, "that message was already posted")
+          end
           save(s)
         end, target.body)
       end)

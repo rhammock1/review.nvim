@@ -31,7 +31,7 @@ With [lazy.nvim](https://github.com/folke/lazy.nvim):
 2. On a line or a visual selection, press `<leader>rc` and type your comment.
    - `<CR>` (normal) or `<C-s>` (insert) saves it as a **pending** draft. The agent ignores drafts.
    - `<C-p>` **posts** it right away.
-   - `q` / `<Esc>` (normal) cancels.
+   - `q` / `<Esc>` (normal) cancels. Leaving the popup with text in it keeps it open.
 3. `<leader>rs` posts every pending comment, including draft replies.
 4. In Claude Code, say "watch my review comments". The `review-comments` skill runs `review-watch` and replies to each posted comment.
 5. Replies appear as `◆ 💬 2 · agent replied`. Press `<leader>rc` on that line to open the thread and reply. Your reply sets the comment back to POSTED, and the agent picks it up again.

@@ -2,10 +2,20 @@ local config = require("review.config")
 
 local M = {}
 
-local function keys(list)
-  if type(list) == "string" then return list end
-  if not list or #list == 0 then return "" end
-  return table.concat(list, " ")
+--- Key list as text, with an optional mode suffix; nil when the key is off.
+local function keys(list, mode)
+  if #list == 0 then return nil end
+  return table.concat(list, " ") .. (mode and (" (" .. mode .. ")") or "")
+end
+
+--- Join the non-nil parts, or nil when there are none.
+local function join(...)
+  local parts = {}
+  for i = 1, select("#", ...) do
+    local p = select(i, ...)
+    if p then table.insert(parts, p) end
+  end
+  return #parts > 0 and table.concat(parts, "  ") or nil
 end
 
 --- Cheat-sheet lines built from the current config, so remaps show up.
@@ -17,13 +27,13 @@ function M.lines()
     if #rows > 0 then table.insert(rows, false) end
     table.insert(rows, title)
   end
-  local function row(key, what) table.insert(rows, { key or "", what }) end
+  local function row(key, what) table.insert(rows, { key, what }) end
   local function global(name, cmd, what)
     row(km[name] and (km[name] .. "  " .. cmd) or cmd, what)
   end
 
-  section("Anywhere (on a line or visual selection)")
-  global("comment", ":ReviewComment", "New comment; on a commented line: open thread")
+  section("Anywhere")
+  global("comment", ":ReviewComment", "New comment on a line or selection; on a comment: open thread")
   global("thread", ":ReviewThread", "Show the thread under the cursor")
   global("list", ":ReviewList[!]", "List comments in Telescope (! = incl. resolved)")
   global("submit", ":ReviewSubmit", "Post all pending comments/replies to the agent")
@@ -32,10 +42,17 @@ function M.lines()
   row(":ReviewNew", "Start a fresh review (#n+1) for this branch")
   global("help", ":ReviewHelp", "This cheat-sheet")
 
-  section("In the comment popup")
-  row(keys(fk.save_normal) .. " (normal)  " .. keys(fk.save_insert) .. " (insert)", "Save as pending draft")
-  row(keys(fk.post), "Post now (agent picks it up)")
-  row(keys(fk.cancel) .. " (normal)", "Cancel")
+  local popup = {
+    { join(keys(fk.save_normal, "normal"), keys(fk.save_insert, "insert")),
+      config.options.post_on_submit and "Save and post (agent picks it up)" or "Save as pending draft" },
+    { keys(fk.post), "Post now (agent picks it up)" },
+    { keys(fk.cancel, "normal"), "Cancel" },
+  }
+  popup = vim.tbl_filter(function(r) return r[1] ~= nil end, popup)
+  if #popup > 0 then
+    section("In the comment popup")
+    for _, r in ipairs(popup) do row(r[1], r[2]) end
+  end
 
   section("In the list (Telescope)")
   row("<CR>", "Jump to comment")
@@ -44,8 +61,9 @@ function M.lines()
   row("<M-h>", "Show/hide resolved")
 
   section("Signs")
-  row(string.format("%s pending  %s posted  %s responded  %s resolved",
-    sg.PENDING, sg.POSTED, sg.RESPONDED, sg.RESOLVED), "")
+  local function sign(status) return sg[status] ~= "" and (sg[status] .. " " .. status:lower()) or nil end
+  local signs = join(sign("PENDING"), sign("POSTED"), sign("RESPONDED"), sign("RESOLVED"))
+  if signs then row(signs, "") end
   row("· moved?", "Snippet changed; shown at stored line")
 
   local width = 0
@@ -72,11 +90,14 @@ end
 function M.open()
   local cur = vim.api.nvim_get_current_win()
   if vim.w[cur].review_help then return cur end
+  -- From insert mode (<C-o> or an insert mapping): leave it, and return on close.
+  local from_insert = vim.fn.mode(1):match("^n?i") ~= nil
+  if from_insert then vim.cmd("stopinsert") end
   local lines = M.lines()
   local width = 0
   for _, l in ipairs(lines) do width = math.max(width, vim.fn.strdisplaywidth(l)) end
-  width = math.min(width + 2, vim.o.columns - 4)
-  local height = math.min(#lines, vim.o.lines - 4)
+  width = math.max(math.min(width + 2, vim.o.columns - 4), 1)
+  local height = math.max(math.min(#lines, vim.o.lines - 4), 1)
   local buf = vim.api.nvim_create_buf(false, true)
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
   vim.bo[buf].modifiable = false
@@ -84,13 +105,16 @@ function M.open()
   local win = vim.api.nvim_open_win(buf, false, {
     relative = "editor", style = "minimal", border = "rounded",
     width = width, height = height,
-    row = math.floor((vim.o.lines - height) / 2) - 1,
-    col = math.floor((vim.o.columns - width) / 2),
+    row = math.max(math.floor((vim.o.lines - height) / 2) - 1, 0),
+    col = math.max(math.floor((vim.o.columns - width) / 2), 0),
     title = " review.nvim ", title_pos = "center",
     footer = " q close ", footer_pos = "right",
   })
   -- Mark the window before entering it, so the comment popup stays open underneath.
   vim.w[win].review_help = true
+  vim.wo[win].wrap = true
+  vim.wo[win].linebreak = true
+  vim.wo[win].breakindent = true
   vim.api.nvim_set_current_win(win)
   -- Highlight section titles.
   for i, l in ipairs(lines) do
@@ -101,6 +125,10 @@ function M.open()
   for _, k in ipairs({ "q", "<Esc>" }) do
     vim.keymap.set("n", k, function()
       if vim.api.nvim_win_is_valid(win) then vim.api.nvim_win_close(win, true) end
+      if from_insert and vim.api.nvim_get_current_win() == cur then
+        -- Typing usually continues at the end of the line.
+        vim.cmd(vim.fn.col(".") >= vim.fn.col("$") - 1 and "startinsert!" or "startinsert")
+      end
     end, { buffer = buf, nowait = true })
   end
   vim.api.nvim_create_autocmd("WinLeave", {

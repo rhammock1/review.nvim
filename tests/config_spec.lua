@@ -1,0 +1,21 @@
+local config = require("review.config")
+
+describe("config", function()
+  it("defaults", function()
+    config.setup()
+    assert.equals("<leader>rc", config.options.keymaps.comment)
+    assert.is_false(config.options.post_on_submit)
+  end)
+
+  it("override list replaces", function()
+    config.setup({ float_keymaps = { post = { "<C-g>" } } })
+    assert.same({ "<C-g>" }, config.options.float_keymaps.post)
+    assert.same({ "<CR>" }, config.options.float_keymaps.save_normal)
+  end)
+
+  it("false disables", function()
+    config.setup({ keymaps = { export = false } })
+    assert.is_false(config.options.keymaps.export)
+    assert.equals("<leader>rl", config.options.keymaps.list)
+  end)
+end)

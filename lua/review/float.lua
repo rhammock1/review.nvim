@@ -529,8 +529,10 @@ local function open(ctx, comment, on_submit, initial)
     if (s.pinned and valid(s.input_win)) or has_draft(s) then return apply_layout(s) end
     M.close()
   end)
-  on("WinScrolled", { pattern = tostring(ctx.winid) }, function()
-    vim.schedule(function() apply_layout(s) end)
+  -- The pattern only names the first window that scrolled; scroll-bound diff
+  -- panes move ours along with another, so look at every window that did.
+  on("WinScrolled", {}, function()
+    if vim.v.event[tostring(ctx.winid)] then vim.schedule(function() apply_layout(s) end) end
   end)
   -- :q, :only and :tabclose skip our own close; don't lose what was typed.
   on("WinClosed", { pattern = tostring(s.input_win) }, function()

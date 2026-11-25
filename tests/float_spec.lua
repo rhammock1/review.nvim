@@ -455,43 +455,6 @@ describe("float", function()
     assert.is_nil(float.state)
   end)
 
-  it("hides while its lines are scrolled away and returns with them", function()
-    local many = {}
-    for i = 1, 200 do many[i] = "line " .. i end
-    vim.api.nvim_buf_set_lines(ctx.bufnr, 0, -1, false, many)
-    vim.api.nvim_win_set_cursor(ctx.winid, { 100, 0 })
-    vim.cmd("normal! zz")
-    ctx = assert(context.current({ 100, 100 }))
-    float.open_new(ctx, function(body)
-      local c = reply_thread(0)
-      c.thread[1].body, c.snippet, c.line_start, c.line_end = body, "line 100", 100, 100
-      return c
-    end)
-    feed("ihello<C-p>")
-    vim.cmd("stopinsert")
-    vim.api.nvim_set_current_win(ctx.winid)
-    local function hidden() return conf(float.state.input_win).hide and conf(float.state.thread_win).hide end
-    local function scrolled(keys)
-      vim.cmd("normal! " .. keys)
-      vim.api.nvim_exec_autocmds("WinScrolled", { pattern = tostring(ctx.winid) })
-      vim.wait(50, function() return false end)
-    end
-    assert.is_false(hidden())
-    assert.is_true(float.showing("c_1"))
-    scrolled("gg")
-    assert.is_true(hidden())
-    assert.is_false(float.showing("c_1"))
-    scrolled("100Gzz")
-    assert.is_false(hidden())
-    -- going to it shows it wherever the code is
-    scrolled("gg")
-    vim.api.nvim_set_current_win(float.state.input_win)
-    assert.is_false(hidden())
-    local a = rows(float.state.thread_win)
-    assert.is_true(a >= 1)
-    assert.is_true(select(2, rows(float.state.thread_win)) < rows(float.state.input_win))
-  end)
-
   it("isn't showing from another tab", function()
     float.open_new(ctx, posting)
     feed("ihello<C-p>")
@@ -577,5 +540,86 @@ describe("float", function()
     float.open_thread(ctx, c, submit)
     vim.cmd("redraw")
     assert.truthy(flat(conf(float.state.thread_win).title):find("odd one", 1, true))
+  end)
+
+  -- Scrolling events only fire from Neovim's own input loop, so these run in
+  -- a second Neovim driven over RPC.
+  local function child(setup)
+    local root = vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":p:h:h")
+    local chan = vim.fn.jobstart({ vim.v.progpath, "--embed", "--headless", "--clean", "--cmd", "set rtp^=" .. root },
+      { rpc = true })
+    local function lua(code, ...) return vim.rpcrequest(chan, "nvim_exec_lua", code, { ... }) end
+    lua([[
+      local repo, setup = ...
+      require("review.config").setup()
+      vim.cmd("cd " .. repo)
+      local many = {}
+      for i = 1, 300 do many[i] = "line " .. i end
+      vim.fn.writefile(many, repo .. "/a.txt")
+      vim.fn.writefile(vim.list_extend({ "extra" }, many), repo .. "/b.txt")
+      vim.cmd("edit " .. repo .. "/a.txt")
+      if setup == "diff" then
+        vim.o.diffopt = "internal,filler,context:400"
+        vim.cmd("diffthis | leftabove vsplit " .. repo .. "/b.txt | diffthis | wincmd l")
+      end
+      vim.api.nvim_win_set_cursor(0, { 150, 0 })
+      vim.cmd("normal! zz")
+      local float = require("review.float")
+      local ctx = require("review.context").current({ 150, 150 })
+      float.open_new(ctx, function(body)
+        return { id = "c_1", status = "POSTED", path = "a.txt", side = "new", line_start = 150, line_end = 150,
+          snippet = "line 150", thread = { { id = "m_1", author = "user", body = body, at = "1" } } }
+      end)
+      vim.api.nvim_input("hello<C-p><Esc>")
+    ]], repo, setup)
+    local function wait(code)
+      local ok = vim.wait(2000, function() return lua(code) end, 20)
+      return ok
+    end
+    local function hidden()
+      return lua([[local s = require("review.float").state
+        return s ~= nil and vim.api.nvim_win_get_config(s.input_win).hide == true
+          and vim.api.nvim_win_get_config(s.thread_win).hide == true]])
+    end
+    return { lua = lua, wait = wait, hidden = hidden, input = function(k) vim.rpcrequest(chan, "nvim_input", k) end,
+      stop = function() vim.fn.jobstop(chan) end }
+  end
+
+  it("hides while its lines are scrolled away and returns with them", function()
+    local c = child("plain")
+    assert.is_true(c.wait([[return require("review.float").state.thread_win ~= nil]]))
+    c.lua([[vim.api.nvim_set_current_win(require("review.float").state.ctx.winid)]])
+    assert.is_false(c.hidden())
+    c.input("gg")
+    assert.is_true(c.wait([[return vim.fn.line("w0") == 1]]))
+    assert.is_true(c.wait([[local s = require("review.float").state
+      return vim.api.nvim_win_get_config(s.input_win).hide]]))
+    assert.is_false(c.lua([[return require("review.float").showing("c_1")]]))
+    c.input("150Gzz")
+    assert.is_true(c.wait([[local s = require("review.float").state
+      return not vim.api.nvim_win_get_config(s.input_win).hide]]))
+    -- going to it shows it, whatever the code shows, without overlapping itself
+    c.input("gg")
+    assert.is_true(c.wait([[return require("review.float").state ~= nil
+      and vim.api.nvim_win_get_config(require("review.float").state.input_win).hide]]))
+    c.lua([[vim.api.nvim_set_current_win(require("review.float").state.input_win)]])
+    assert.is_true(c.wait([[local s = require("review.float").state
+      if vim.api.nvim_win_get_config(s.input_win).hide then return false end
+      vim.cmd("redraw")
+      local t, i = vim.fn.getwininfo(s.thread_win)[1], vim.fn.getwininfo(s.input_win)[1]
+      return t.winrow + t.height + 1 <= i.winrow]]))
+    c.stop()
+  end)
+
+  it("hides when a scroll-bound diff pane drags its lines away", function()
+    local c = child("diff")
+    assert.is_true(c.wait([[return require("review.float").state.thread_win ~= nil]]))
+    c.lua([[vim.cmd("wincmd h")]])
+    assert.is_false(c.hidden())
+    c.input("gg")
+    assert.is_true(c.wait([[return vim.fn.line("w0", require("review.float").state.ctx.winid) <= 2]]))
+    assert.is_true(c.wait([[local s = require("review.float").state
+      return vim.api.nvim_win_get_config(s.input_win).hide]]))
+    c.stop()
   end)
 end)

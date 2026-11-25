@@ -71,6 +71,7 @@ function M.setup(opts)
   M.options = vim.tbl_deep_extend("force", vim.deepcopy(M.defaults), opts)
   replace_lists(M.options, opts)
   normalize(M.options)
+  M.configured = true
   return M.options
 end
 

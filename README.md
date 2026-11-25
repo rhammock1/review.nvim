@@ -25,6 +25,8 @@ Needs Neovim 0.11 or newer (tested on 0.12). With [lazy.nvim](https://github.com
 }
 ```
 
+Run `:checkhealth review` if something doesn't work.
+
 ## Workflow
 
 1. Open a diff against your base branch, for example `:DiffviewOpen origin/main...HEAD --imply-local`. With `--imply-local`, the right side is your working tree. Comments work in ordinary file buffers too.

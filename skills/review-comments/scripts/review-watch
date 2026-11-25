@@ -42,7 +42,13 @@ fi
 
 state_dir="${XDG_STATE_HOME:-$HOME/.local/state}/review-watch"
 mkdir -p "$state_dir"
-key=$(printf '%s' "$(cd "$(dirname "$file")" 2>/dev/null && pwd -P)/$(basename "$file")" | shasum | cut -c1-40)
+# shasum and sha1sum give the same digest; cksum is the POSIX last resort.
+digest() {
+  if command -v shasum >/dev/null; then shasum
+  elif command -v sha1sum >/dev/null; then sha1sum
+  else cksum; fi | cut -d' ' -f1
+}
+key=$(printf '%s' "$(cd "$(dirname "$file")" 2>/dev/null && pwd -P)/$(basename "$file")" | digest)
 seen="$state_dir/$key"
 touch "$seen"
 

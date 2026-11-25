@@ -55,5 +55,17 @@ out=$("$RW" --once); check "active file ignores prefix-sharing branch" 0 "c_ffff
 echo '{"comments":[{"id":"c_nothrd","status":"POSTED"}]}' > "$repo/.review/nothread.json"
 out=$("$RW" --once "$repo/.review/nothread.json"); check "missing thread tolerated" 0 "c_nothrd" $? "$out"
 
+# without shasum, fall back to sha1sum, then cksum
+tools="$tmp/tools"; mkdir -p "$tools"
+for t in bash jq grep mkdir touch cut dirname basename cksum; do ln -s "$(command -v "$t")" "$tools/$t"; done
+echo '{"comments":[{"id":"c_hashed","status":"POSTED"}]}' > "$repo/.review/hash.json"
+run_bare() { PATH="$tools" XDG_STATE_HOME="$tmp/$1" "$tools/bash" "$RW" --once "$repo/.review/hash.json" 2>&1; }
+out=$(run_bare bare); check "cksum fallback" 0 "c_hashed" $? "$out"
+out=$(run_bare bare); check "cksum fallback remembers" 1 "" $? "$out"
+[[ -n "$(ls -A "$tmp/bare/review-watch")" ]] && n=yes || n=no; check "cksum fallback names its state file" 0 yes 0 "$n"
+printf '#!%s\ncat >/dev/null 2>&1 || true\necho "fakesha1  -"\n' "$tools/bash" > "$tools/sha1sum"; chmod +x "$tools/sha1sum"
+out=$(run_bare sha1); check "sha1sum fallback" 0 "c_hashed" $? "$out"
+check "sha1sum fallback names its state file" 0 fakesha1 0 "$(ls -A "$tmp/sha1/review-watch")"
+
 rm -rf "$tmp"
 [[ $fail == 0 ]] && echo "ALL PASS" || { echo "SOME FAILED"; exit 1; }

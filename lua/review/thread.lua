@@ -102,20 +102,38 @@ function M.body(m)
   return type(m.body) == "string" and m.body or ""
 end
 
---- Mark `file.ext:line` references in a display line.
-local function mark_refs(line, row, marks)
+---@class review.Ref
+---@field first integer byte column where it starts (1-based)
+---@field last integer byte column where it ends (inclusive)
+---@field path string
+---@field line integer
+---@field line_end integer
+
+--- `file.ext:line` and `file.ext:line-line` references in a line of text.
+---@return review.Ref[]
+function M.refs(line)
+  local out = {}
   for at, word in line:gmatch("()(%S+)") do
     -- The pattern backtracks badly on very long words, which aren't references.
     local from = #word <= 300 and not word:find("://", 1, true) and 1 or nil
     while from do
-      local a, b = word:find("[%w_./@-]+%.%a%w*:%d+", from)
+      local a, b = word:find("[%w_./@~-]+%.%a%w*:%d+", from)
       if not a then break end
       local range = word:match("^%-%d+", b + 1)
       if range then b = b + #range end
-      table.insert(marks, { row = row, col = at + a - 2,
-        opts = { end_col = at + b - 1, hl_group = "ReviewRef", priority = 200 } })
+      local path, l1, l2 = word:sub(a, b):match("^(.-):(%d+)%-?(%d*)$")
+      table.insert(out, { first = at + a - 1, last = at + b - 1, path = path,
+        line = tonumber(l1), line_end = tonumber(l2) or tonumber(l1) })
       from = b + 1
     end
+  end
+  return out
+end
+
+local function mark_refs(line, row, marks)
+  for _, ref in ipairs(M.refs(line)) do
+    table.insert(marks, { row = row, col = ref.first - 1,
+      opts = { end_col = ref.last, hl_group = "ReviewRef", priority = 200 } })
   end
 end
 

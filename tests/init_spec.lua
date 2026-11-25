@@ -379,4 +379,90 @@ describe("review (wiring)", function()
     vim.cmd("ReviewNext")
     vim.cmd("ReviewPrev")
   end)
+
+  -- Open a thread whose agent reply mentions files, and put the cursor on `ref`.
+  local function thread_with(body, ref)
+    review.comment()
+    feed("iq<C-p>")
+    vim.cmd("stopinsert")
+    local sess = review._session(repo)
+    table.insert(sess.review.comments[1].thread, { id = "m_ref", author = "agent", body = body, at = "2" })
+    float.update(sess.review)
+    vim.api.nvim_set_current_win(float.state.thread_win)
+    local lines = vim.api.nvim_buf_get_lines(0, 0, -1, false)
+    for i, l in ipairs(lines) do
+      local col = l:find(ref, 1, true)
+      if col then return vim.api.nvim_win_set_cursor(0, { i, col }) end
+    end
+    error("reference not shown: " .. ref)
+  end
+  local function at() return { vim.fn.fnamemodify(vim.api.nvim_buf_get_name(0), ":." ), vim.api.nvim_win_get_cursor(0)[1] } end
+
+  it("opens a file reference in the code window", function()
+    vim.fn.writefile({ "1", "2", "3", "4" }, repo .. "/b.txt")
+    local code = vim.api.nvim_get_current_win()
+    thread_with("see b.txt:3 please", "b.txt:3")
+    feed("gf")
+    assert.same({ "b.txt", 3 }, at())
+    assert.equals(code, vim.api.nvim_get_current_win())
+    assert.equals(1, #vim.api.nvim_list_tabpages())
+  end)
+
+  it("finds a file by the end of its path, and asks when several match", function()
+    vim.fn.mkdir(repo .. "/sub", "p")
+    vim.fn.mkdir(repo .. "/x", "p")
+    vim.fn.writefile({ "1", "2" }, repo .. "/sub/c.txt")
+    vim.fn.writefile({ "1" }, repo .. "/sub/d.txt")
+    vim.fn.writefile({ "1", "2", "3" }, repo .. "/x/d.txt")
+    h.sh({ "git", "add", "." }, repo)
+    thread_with("c.txt:2 and d.txt:3", "c.txt:2")
+    feed("<CR>")
+    assert.same({ "sub/c.txt", 2 }, at())
+    local select, offered = vim.ui.select, nil
+    vim.ui.select = function(items, _, cb) offered = items cb(items[2]) end
+    vim.cmd("edit " .. repo .. "/a.txt")
+    vim.api.nvim_win_set_cursor(0, { 3, 0 })
+    review.comment()
+    vim.cmd("stopinsert")
+    vim.api.nvim_set_current_win(float.state.thread_win)
+    vim.fn.search("d.txt:3")
+    feed("gf")
+    vim.ui.select = select
+    assert.same({ "sub/d.txt", "x/d.txt" }, offered)
+    assert.same({ "x/d.txt", 3 }, at())
+  end)
+
+  it("opens a file outside the repo by its absolute path", function()
+    local outside = vim.fn.tempname() .. ".txt"
+    vim.fn.writefile({ "a", "b" }, outside)
+    outside = vim.uv.fs_realpath(outside)
+    thread_with("look at " .. outside .. ":2 there", outside .. ":2")
+    feed("gf")
+    assert.equals(outside, vim.uv.fs_realpath(vim.api.nvim_buf_get_name(0)))
+    assert.equals(2, vim.api.nvim_win_get_cursor(0)[1])
+  end)
+
+  it("says so when the file can't be found or nothing is under the cursor", function()
+    thread_with("nope.txt:4 is gone", "nope.txt:4")
+    local said, notify = {}, vim.notify
+    vim.notify = function(m) table.insert(said, m) end
+    feed("gf")
+    vim.api.nvim_win_set_cursor(0, { 2, 0 })
+    feed("gf")
+    vim.notify = notify
+    assert.equals(float.state.thread_win, vim.api.nvim_get_current_win())
+    assert.truthy(said[1]:find("nope.txt", 1, true))
+    assert.truthy(said[2]:find("no file reference", 1, true))
+  end)
+
+  it("uses a new tab rather than breaking a diff", function()
+    vim.fn.writefile({ "1", "2", "3", "4" }, repo .. "/b.txt")
+    vim.cmd("diffthis")
+    thread_with("see b.txt:3", "b.txt:3")
+    feed("gf")
+    assert.same({ "b.txt", 3 }, at())
+    assert.equals(2, #vim.api.nvim_list_tabpages())
+    vim.cmd("tabclose")
+    vim.cmd("diffoff!")
+  end)
 end)

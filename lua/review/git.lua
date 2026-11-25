@@ -30,6 +30,13 @@ function M.exclude_path(cwd)
   return p
 end
 
+--- Files git knows about, relative to the repo root.
+---@return string[]
+function M.files(cwd)
+  local out = run({ "git", "ls-files", "--cached", "--others", "--exclude-standard" }, cwd)
+  return out and out ~= "" and vim.split(out, "\n", { plain = true }) or {}
+end
+
 function M.is_ignored(path, cwd)
   local ok, obj = pcall(vim.system, { "git", "check-ignore", "-q", path }, { cwd = cwd })
   return ok and obj:wait().code == 0

@@ -411,6 +411,18 @@ local function show_thread(s, follow)
     s.thread_win = open_win(s, s.thread_buf, false, TOP)
     local o = { buffer = s.thread_buf, nowait = true, silent = true }
     for _, k in ipairs(config.options.float_keymaps.cancel) do vim.keymap.set("n", k, s.cancel, o) end
+    local function follow()
+      local col = api.nvim_win_get_cursor(0)[2] + 1
+      for _, ref in ipairs(thread.refs(api.nvim_get_current_line())) do
+        if col >= ref.first and col <= ref.last then
+          if M.open_reference then M.open_reference(s, ref) end
+          return
+        end
+      end
+      vim.notify("review: no file reference under the cursor")
+    end
+    vim.keymap.set("n", "gf", follow, o)
+    vim.keymap.set("n", "<CR>", follow, o)
     vim.keymap.set("n", "<C-w>j", function()
       if valid(s.input_win) then api.nvim_set_current_win(s.input_win) end
     end, o)
@@ -424,6 +436,10 @@ local function show_thread(s, follow)
   draw_range(s)
   apply_layout(s, follow)
 end
+
+--- Called with the popup and a reference under the cursor in its thread.
+---@type fun(popup: review.Popup, ref: review.Ref)|nil
+M.open_reference = nil
 
 --- Redraw the open thread from the review, if it's showing one of its comments.
 ---@param review review.Review

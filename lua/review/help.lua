@@ -51,6 +51,7 @@ function M.lines()
     { keys(fk.cancel, "normal"), "Close (asks before discarding text)" },
     { join(keys(fk.scroll_up), keys(fk.scroll_down)), "Scroll the thread" },
     { "<C-w>k  <C-w>j", "Move to the thread / back to the reply box" },
+    { "gf  <CR> (thread)", "Open the file:line under the cursor" },
   }
   popup = vim.tbl_filter(function(r) return r[1] ~= nil end, popup)
   if #popup > 0 then

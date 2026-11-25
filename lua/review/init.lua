@@ -241,7 +241,8 @@ local function view_has(view, path)
 end
 
 local function jump_to_file(s, c, after)
-  vim.cmd("edit " .. vim.fn.fnameescape(s.toplevel .. "/" .. c.path))
+  local file = c.path:sub(1, 1) == "/" and c.path or (s.toplevel .. "/" .. c.path)
+  vim.cmd("edit " .. vim.fn.fnameescape(file))
   local loc = anchor.locate(vim.api.nvim_buf_get_lines(0, 0, -1, false), c)
   vim.api.nvim_win_set_cursor(0, { loc.start, 0 })
   vim.cmd("normal! zz")
@@ -251,13 +252,19 @@ end
 
 --- Put the cursor on a comment: inside an open diffview for the repo when it
 --- lists the file, otherwise in the real file.
-local function jump(s, c, after)
+--- The open diffview for this repo, if it lists `path`.
+local function view_with(s, path)
   local lib = package.loaded["diffview.lib"]
   local view = lib and lib.get_current_view()
-  if not (view and view.adapter and view.adapter.ctx.toplevel == s.toplevel
-          and view.set_file_by_path and view_has(view, c.path)) then
-    return jump_to_file(s, c, after)
+  if view and view.adapter and view.adapter.ctx.toplevel == s.toplevel
+    and view.set_file_by_path and view_has(view, path) then
+    return view
   end
+end
+
+local function jump(s, c, after)
+  local view = view_with(s, c.path)
+  if not view then return jump_to_file(s, c, after) end
   view:set_file_by_path(c.path, true, true)
   local tries = 0
   local function land()
@@ -282,6 +289,54 @@ local function jump(s, c, after)
     if after then after() end
   end
   land()
+end
+
+--- Find a referenced file: from the repo root, as an absolute path, or by the
+--- end of its path among the repo's files (asking when several match).
+---@param cb fun(path: string)
+local function resolve(toplevel, ref, cb)
+  local path = vim.fs.normalize(ref):gsub("^%./", "")
+  if path:sub(1, 1) == "/" then
+    if vim.uv.fs_stat(path) then
+      local rel = vim.fs.relpath(toplevel, path)
+      return cb(rel or path)
+    end
+  elseif vim.uv.fs_stat(toplevel .. "/" .. path) then
+    return cb(path)
+  else
+    local found = vim.tbl_filter(function(f)
+      return f == path or vim.endswith(f, "/" .. path)
+    end, git.files(toplevel))
+    table.sort(found)
+    if #found == 1 then return cb(found[1]) end
+    if #found > 1 then
+      return vim.ui.select(found, { prompt = "Which " .. path .. "?" }, function(choice)
+        if choice then cb(choice) end
+      end)
+    end
+  end
+  notify("can't find " .. ref, vim.log.levels.WARN)
+end
+
+--- Open a file reference from a thread: in the diff when it shows the file,
+--- otherwise in the commented file's window, or a new tab when that is a diff.
+---@param popup review.Popup
+---@param ref review.Ref
+float.open_reference = function(popup, ref)
+  local top = popup.ctx.toplevel
+  if not top then return end
+  local s = session_for(top)
+  resolve(top, ref.path, function(path)
+    local target = { path = path, side = "new", line_start = ref.line, line_end = ref.line_end }
+    if view_with(s, path) then return jump(s, target) end
+    local win = popup.ctx.winid
+    if vim.api.nvim_win_is_valid(win) and not vim.wo[win].diff then
+      vim.api.nvim_set_current_win(win)
+    else
+      vim.cmd("tabnew")
+    end
+    jump_to_file(s, target)
+  end)
 end
 
 function M.list(show_resolved)

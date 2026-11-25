@@ -65,6 +65,20 @@ function M.refresh_all(review, toplevel)
   end
 end
 
+--- First lines of the visible comments in a buffer, in order.
+---@return integer[]
+function M.starts(bufnr, review, toplevel)
+  local seen, out = {}, {}
+  for _, item in ipairs(located(bufnr, review, toplevel)) do
+    if not seen[item.loc.start] then
+      seen[item.loc.start] = true
+      table.insert(out, item.loc.start)
+    end
+  end
+  table.sort(out)
+  return out
+end
+
 ---@return review.Comment|nil, { start: integer, finish: integer, moved: boolean }|nil
 function M.comment_at(bufnr, lnum, review, toplevel)
   if bufnr == 0 then bufnr = vim.api.nvim_get_current_buf() end

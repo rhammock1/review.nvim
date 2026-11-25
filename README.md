@@ -55,6 +55,7 @@ Needs Neovim 0.11 or newer (tested on 0.12). With [lazy.nvim](https://github.com
 |---|---|---|
 | `<leader>rc` | `:ReviewComment` (range) | New comment, or open the thread on the current line |
 | `<leader>rv` | `:ReviewThread` | Show the thread under the cursor |
+| `]r` / `[r` | `:ReviewNext` / `:ReviewPrev` | Next or previous comment in this file (takes a count) |
 | `<leader>rl` | `:ReviewList[!]` | Telescope list (`!` includes resolved) |
 | `<leader>rs` | `:ReviewSubmit` | Post all pending |
 | `<leader>re` | `:ReviewExport` | Markdown to a buffer and/or clipboard |
@@ -85,7 +86,8 @@ require("review").setup({
   show_resolved = false,
   peek = false,               -- true: preview a comment when the cursor rests on it ('updatetime')
   keymaps = { comment = "<leader>rc", thread = "<leader>rv", list = "<leader>rl",
-              submit = "<leader>rs", export = "<leader>re", help = "<leader>r?" },  -- false disables
+              submit = "<leader>rs", export = "<leader>re", help = "<leader>r?",
+              next = "]r", prev = "[r" },  -- false disables
   float_keymaps = { save_insert = { "<C-s>" }, save_normal = { "<CR>" },
                     post = { "<C-p>" }, cancel = { "q", "<Esc>" },
                     scroll_up = { "<C-b>" }, scroll_down = { "<C-f>" } },

@@ -14,6 +14,8 @@ M.defaults = {
     submit = "<leader>rs",
     export = "<leader>re",
     help = "<leader>r?",
+    next = "]r",
+    prev = "[r",
   },
   float_keymaps = {
     save_insert = { "<C-s>" },

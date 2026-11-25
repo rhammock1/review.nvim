@@ -214,6 +214,23 @@ function M.export()
   if s then export.run(s.review) end
 end
 
+--- Move to the next or previous comment in this file, like ]c and [c.
+---@param dir 1|-1
+---@param count? integer
+function M.go(dir, count)
+  local buf = vim.api.nvim_get_current_buf()
+  local info = context.for_buffer(buf)
+  if not info then return notify("no comments here") end
+  local s = session_for(info.toplevel)
+  local here = vim.api.nvim_win_get_cursor(0)[1]
+  local ahead = vim.tbl_filter(function(l) return (l - here) * dir > 0 end, marks.starts(buf, s.review, s.toplevel))
+  if #ahead == 0 then return notify(dir > 0 and "no comments below" or "no comments above") end
+  local n = math.min(math.max(count or 1, 1), #ahead)
+  vim.cmd("normal! m'") -- so <C-o> comes back
+  vim.api.nvim_win_set_cursor(0, { dir > 0 and ahead[n] or ahead[#ahead - n + 1], 0 })
+  vim.cmd("normal! zv")
+end
+
 --- Does this diffview view list `path` among its files?
 local function view_has(view, path)
   if not (view.files and view.files.iter) then return false end
@@ -350,6 +367,8 @@ local function set_keymaps()
   map("n", km.list, function() M.list() end, "Review: list comments")
   map("n", km.submit, M.submit, "Review: post pending comments")
   map("n", km.export, M.export, "Review: export markdown")
+  map("n", km.next, function() M.go(1, vim.v.count1) end, "Review: next comment")
+  map("n", km.prev, function() M.go(-1, vim.v.count1) end, "Review: previous comment")
   map("n", km.help, function() require("review.help").open() end, "Review: keymap cheat-sheet")
 end
 
@@ -365,6 +384,8 @@ function M.setup(opts)
   cmd("ReviewExport", M.export, {})
   cmd("ReviewNew", M.new, {})
   cmd("ReviewResolve", M.resolve, {})
+  cmd("ReviewNext", function(o) M.go(1, o.count) end, { count = 1, desc = "Review: next comment in this file" })
+  cmd("ReviewPrev", function(o) M.go(-1, o.count) end, { count = 1, desc = "Review: previous comment in this file" })
   cmd("ReviewHelp", function() require("review.help").open() end, {})
   set_keymaps()
 

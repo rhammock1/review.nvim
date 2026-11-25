@@ -7,6 +7,24 @@ you: <leader>rc on a line ──► .review/2026-11-25-feat-x-1.json ◄── a
      ◆ 💬 2 · agent replied ◄────────── file watcher ◄──────────── reply appended
 ```
 
+## Install
+
+With [lazy.nvim](https://github.com/folke/lazy.nvim):
+
+```lua
+{
+  "rhammock1/review.nvim",
+  lazy = false,
+  build = ":ReviewInstall claude", -- optional: sets up the agent side
+  dependencies = {
+    "nvim-lua/plenary.nvim",
+    "nvim-telescope/telescope.nvim", -- for :ReviewList
+    "sindrets/diffview.nvim",
+  },
+  opts = {},
+}
+```
+
 ## Workflow
 
 1. `<leader>gd` opens `DiffviewOpen origin/dev...HEAD --imply-local`. The right side is your working tree.
@@ -42,6 +60,7 @@ you: <leader>rc on a line ──► .review/2026-11-25-feat-x-1.json ◄── a
 | | `:ReviewNew` | Start review `n+1` for this branch |
 | | `:ReviewResolve` | Resolve the comment under the cursor |
 | `<leader>r?` | `:ReviewHelp` | Keymap cheat-sheet popup |
+| | `:ReviewInstall {agent}` | Install the agent side (`claude`) |
 
 Keys in the Telescope picker:
 
@@ -73,19 +92,18 @@ require("review").setup({
 
 ## Agent side
 
-- `bin/review-watch`: blocks until new posted comments appear, then prints their ids (`--once`, `--interval`, `FILE`). Needs `jq`. Tests are in `tests/review_watch_test.sh`.
-- `skills/review-comments/SKILL.md`: the file format, status rules, and the atomic-write recipe for the agent.
+The agent needs a skill, `skills/review-comments`, which holds:
 
-Link both into place, with any directory on your `PATH` for the script (paths assume lazy.nvim's default install location):
+- `SKILL.md`: the file format, status rules, and the atomic-write recipe for the agent.
+- `scripts/review-watch`: blocks until new posted comments appear, then prints their ids (`--once`, `--interval`, `FILE`). Needs `jq`. Tests are in `tests/review_watch_test.sh`.
 
-```bash
-R=~/.local/share/nvim/lazy/review.nvim
-mkdir -p ~/scripts/bin ~/.claude/skills
-ln -sn "$R/bin/review-watch" ~/scripts/bin/review-watch
-ln -sn "$R/skills/review-comments" ~/.claude/skills/review-comments
-```
+`:ReviewInstall {agent}` links it into place. It never replaces an existing file or directory, and it's safe to run again. Since it's a link, updating the plugin updates the skill.
 
-If you already have copies at those paths, move them aside first (for the skill, out of `~/.claude/skills`). `ln` won't replace a real directory; it would put the link inside it.
+| Agent | Installs to |
+|---|---|
+| `claude` | `~/.claude/skills/review-comments` (or under `$CLAUDE_CONFIG_DIR`) |
+
+To add an agent, add an entry to `agents` in `lua/review/install.lua`.
 
 ## Development
 

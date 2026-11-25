@@ -40,7 +40,7 @@ Robert reviews diffs in Neovim (diffview) and leaves inline comments with review
 
 ## The loop
 
-1. Start the watcher in the background from the repo: `review-watch` (from review.nvim's `bin/`, on your PATH). Run it with the Monitor tool or as a background Bash command. It blocks until something new is posted, then prints the comment ids, one per line, and exits 0. Exit 2 means there's no review file yet or the JSON is invalid. Tell Robert, wait a bit, and retry.
+1. Start the watcher in the background from the repo: `scripts/review-watch`, in this skill's directory. It isn't on your PATH, so call it by its full path, but keep the repo as the working directory. Run it with the Monitor tool or as a background Bash command. It blocks until something new is posted, then prints the comment ids, one per line, and exits 0. Exit 2 means there's no review file yet or the JSON is invalid. Tell Robert, wait a bit, and retry.
    - `review-watch --once` checks a single time and doesn't block. It exits 1 if there's nothing new.
    - Pass a file path to watch a specific review.
 2. When it exits, re-read the file and handle each printed id, as described below.

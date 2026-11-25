@@ -40,16 +40,17 @@ function M.lines()
   global("list", ":ReviewList[!]", "List comments in Telescope (! = incl. resolved)")
   global("submit", ":ReviewSubmit", "Post all pending comments/replies to the agent")
   global("export", ":ReviewExport", "Export review as Markdown")
-  row(":ReviewResolve", "Resolve the comment under the cursor")
+  row(":ReviewResolve", "Resolve the comment under the cursor, or the open thread")
   row(":ReviewNew", "Start a fresh review (#n+1) for this branch")
   global("help", ":ReviewHelp", "This cheat-sheet")
 
   local popup = {
     { join(keys(fk.save_normal, "normal"), keys(fk.save_insert, "insert")),
-      config.options.post_on_submit and "Post and stay open" or "Save as pending draft" },
+      config.options.post_on_submit and "Post and stay open" or "Save as draft and close" },
     { keys(fk.post), "Post now (agent picks it up) and stay open" },
     { keys(fk.cancel, "normal"), "Close (asks before discarding text)" },
     { join(keys(fk.scroll_up), keys(fk.scroll_down)), "Scroll the thread" },
+    { "<C-w>k  <C-w>j", "Move to the thread / back to the reply box" },
   }
   popup = vim.tbl_filter(function(r) return r[1] ~= nil end, popup)
   if #popup > 0 then

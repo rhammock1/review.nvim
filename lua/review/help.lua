@@ -44,9 +44,10 @@ function M.lines()
 
   local popup = {
     { join(keys(fk.save_normal, "normal"), keys(fk.save_insert, "insert")),
-      config.options.post_on_submit and "Save and post (agent picks it up)" or "Save as pending draft" },
-    { keys(fk.post), "Post now (agent picks it up)" },
-    { keys(fk.cancel, "normal"), "Cancel" },
+      config.options.post_on_submit and "Post and stay open" or "Save as pending draft" },
+    { keys(fk.post), "Post now (agent picks it up) and stay open" },
+    { keys(fk.cancel, "normal"), "Close (asks before discarding text)" },
+    { join(keys(fk.scroll_up), keys(fk.scroll_down)), "Scroll the thread" },
   }
   popup = vim.tbl_filter(function(r) return r[1] ~= nil end, popup)
   if #popup > 0 then

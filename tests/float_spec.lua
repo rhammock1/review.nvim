@@ -25,7 +25,8 @@ describe("float", function()
     local cfg = vim.api.nvim_win_get_config(float.state.input_win)
     assert.equals("win", cfg.relative)
     local title = table.concat(vim.tbl_map(function(t) return t[1] end, cfg.title))
-    assert.truthy(title:find("a.txt  L2-4 (new)", 1, true))
+    assert.truthy(title:find("New comment", 1, true))
+    assert.truthy(title:find("a.txt L2-4 (new)", 1, true))
     assert.equals("markdown", vim.bo[float.state.input_buf].filetype)
     assert.equals(float.state.input_win, vim.api.nvim_get_current_win())
   end)
@@ -79,8 +80,8 @@ describe("float", function()
     float.open_thread(ctx, comment, submit)
     assert.truthy(vim.api.nvim_win_is_valid(float.state.thread_win))
     local text = table.concat(vim.api.nvim_buf_get_lines(vim.api.nvim_win_get_buf(float.state.thread_win), 0, -1, false), "\n")
-    assert.truthy(text:find("agent ▸ answer", 1, true))
-    assert.truthy(text:find("user ▸ q?", 1, true))
+    assert.truthy(text:find(" Agent\n answer", 1, true))
+    assert.truthy(text:find(" You\n q?", 1, true))
     assert.is_false(vim.bo[vim.api.nvim_win_get_buf(float.state.thread_win)].modifiable)
     float.close()
     assert.is_nil(float.state)
@@ -190,5 +191,253 @@ describe("float", function()
     vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "my draft" })
     assert.is_false(pcall(vim.cmd, "edit " .. repo .. "/a.txt"))
     assert.same({ "my draft" }, vim.api.nvim_buf_get_lines(buf, 0, -1, false))
+  end)
+
+  -- The card ------------------------------------------------------------------
+
+  local function reply_thread(n, extra)
+    local t = { { id = "m_0", author = "user", body = "q?", at = "1" } }
+    for i = 1, n or 1 do t[#t + 1] = { id = "m_" .. i, author = "agent", body = extra or ("answer " .. i), at = "2" } end
+    return { id = "c_1", status = "RESPONDED", path = "a.txt", side = "new", line_start = 2, line_end = 4,
+      snippet = "line 2\nline 3\nline 4", thread = t }
+  end
+  local function flat(chunks) return table.concat(vim.tbl_map(function(c) return c[1] end, chunks or {})) end
+  local function conf(win) return vim.api.nvim_win_get_config(win) end
+  local function thread_text()
+    return table.concat(vim.api.nvim_buf_get_lines(float.state.thread_buf, 0, -1, false), "\n")
+  end
+  local function marked()
+    local out = {}
+    for _, m in ipairs(vim.api.nvim_buf_get_extmarks(ctx.bufnr, vim.api.nvim_create_namespace("review_float"), 0, -1, {})) do
+      table.insert(out, m[2] + 1)
+    end
+    return out
+  end
+  local function info(win) return vim.fn.getwininfo(win)[1] end
+  -- 0-based screen rows a float covers, borders included.
+  local function rows(win)
+    vim.cmd("redraw")
+    local i, b = info(win), conf(win).border
+    local top, bottom = b[2] ~= "" and 1 or 0, b[6] ~= "" and 1 or 0
+    return i.winrow, i.winrow + top + i.height + bottom - 1
+  end
+
+  it("joins the thread and reply box with no gap", function()
+    float.open_thread(ctx, reply_thread(), submit)
+    local _, thread_end = rows(float.state.thread_win)
+    local input_start = rows(float.state.input_win)
+    assert.equals(thread_end + 1, input_start)
+    assert.equals("├", conf(float.state.thread_win).border[7])
+    assert.truthy(flat(conf(float.state.thread_win).footer):find("Reply", 1, true))
+    assert.equals(1, conf(float.state.input_win).height)
+  end)
+
+  it("never drops the status, whatever the path and width", function()
+    for _, cols in ipairs({ 80, 40, 24, 16 }) do
+      vim.o.columns = cols
+      local c = vim.deepcopy(ctx)
+      c.path = ("very/long/directory/"):rep(6) .. "file.ts"
+      float.open_thread(c, reply_thread(), submit)
+      local text = flat(conf(float.state.thread_win).title)
+      assert.truthy(text:find("◆ Replied", 1, true))
+      assert.is_true(conf(float.state.thread_win).width <= math.max(cols - 2, 1))
+      float.close()
+    end
+    vim.o.columns = 80
+  end)
+
+  it("stays inside a pane with number and sign columns", function()
+    vim.cmd("vsplit")
+    vim.wo.number, vim.wo.signcolumn = true, "yes:2"
+    ctx = assert(context.current({ 2, 4 }))
+    float.open_thread(ctx, reply_thread(), submit)
+    vim.cmd("redraw")
+    local pane, card = info(ctx.winid), info(float.state.thread_win)
+    assert.is_true(card.wincol + card.width + 1 <= pane.wincol + pane.width - 1)
+  end)
+
+  it("marks the commented lines only while open", function()
+    float.open_thread(ctx, reply_thread(), submit)
+    assert.same({ 2, 3, 4 }, marked())
+    float.close()
+    assert.same({}, marked())
+  end)
+
+  it("marks where the snippet is now", function()
+    vim.api.nvim_buf_set_lines(ctx.bufnr, 0, 0, false, { "new 1", "new 2" })
+    float.open_thread(ctx, reply_thread(), submit)
+    assert.same({ 4, 5, 6 }, marked())
+  end)
+
+  it("shows a placeholder that is never saved", function()
+    float.open_new(ctx, submit)
+    vim.cmd("stopinsert")
+    local ns = vim.api.nvim_create_namespace("review_float")
+    local function placeholder() return #vim.api.nvim_buf_get_extmarks(float.state.input_buf, ns, 0, -1, {}) end
+    assert.equals(1, placeholder())
+    feed("<CR>")
+    assert.same({}, calls)
+    vim.api.nvim_buf_set_lines(float.state.input_buf, 0, -1, false, { "x" })
+    vim.api.nvim_exec_autocmds("TextChanged", { buffer = float.state.input_buf })
+    assert.equals(0, placeholder())
+  end)
+
+  it("opens at the newest message and scrolls from the reply box", function()
+    float.open_thread(ctx, reply_thread(20), submit)
+    vim.cmd("stopinsert")
+    local w = float.state.thread_win
+    assert.equals(vim.api.nvim_buf_line_count(float.state.thread_buf), info(w).botline)
+    assert.truthy(flat(conf(w).footer):find("▲ %d+ more <C%-b>"))
+    local top = info(w).topline
+    feed("<C-b>")
+    assert.is_true(info(w).topline < top)
+    assert.equals(float.state.input_win, vim.api.nvim_get_current_win())
+    assert.truthy(flat(conf(w).footer):find("▼", 1, true))
+    for _ = 1, 20 do feed("<C-b>") end
+    assert.equals(1, info(w).topline)
+    feed("i<C-f>")
+    assert.is_true(info(w).topline > 1)
+    for _ = 1, 20 do feed("<C-f>") end
+    assert.equals(top, info(w).topline)
+  end)
+
+  it("moves between reply and thread", function()
+    float.open_thread(ctx, reply_thread(), submit)
+    vim.cmd("stopinsert")
+    feed("<C-w>k")
+    assert.equals(float.state.thread_win, vim.api.nvim_get_current_win())
+    feed("<C-w>j")
+    assert.equals(float.state.input_win, vim.api.nvim_get_current_win())
+  end)
+
+  it("fits on screen when the comment fills or leaves the window", function()
+    local many = {}
+    for i = 1, 200 do many[i] = "line " .. i end
+    vim.api.nvim_buf_set_lines(ctx.bufnr, 0, -1, false, many)
+    for _, range in ipairs({ { 1, 200 }, { 150, 160 }, { 20, 20 } }) do
+      vim.api.nvim_win_set_cursor(ctx.winid, { 1, 0 })
+      local c = reply_thread(20)
+      c.line_start, c.line_end = range[1], range[2]
+      c.snippet = table.concat(vim.list_slice(many, range[1], range[2]), "\n")
+      float.open_thread(ctx, c, submit)
+      local a = rows(float.state.thread_win)
+      local _, b = rows(float.state.input_win)
+      assert.is_true(a >= 1)
+      assert.is_true(b <= info(ctx.winid).winrow + info(ctx.winid).height - 1)
+      assert.is_true(select(2, rows(float.state.thread_win)) < rows(float.state.input_win))
+      float.close()
+    end
+  end)
+
+  it("wraps again on resize and keeps the draft", function()
+    vim.cmd("vsplit")
+    ctx = assert(context.current({ 2, 4 }))
+    float.open_thread(ctx, reply_thread(1, ("word "):rep(40)), submit)
+    vim.cmd("stopinsert")
+    vim.api.nvim_buf_set_lines(float.state.input_buf, 0, -1, false, { "my draft" })
+    local before = vim.api.nvim_buf_line_count(float.state.thread_buf)
+    vim.api.nvim_win_set_width(ctx.winid, 24)
+    vim.api.nvim_exec_autocmds("WinResized", {})
+    vim.wait(500, function() return vim.api.nvim_buf_line_count(float.state.thread_buf) > before end)
+    assert.is_true(vim.api.nvim_buf_line_count(float.state.thread_buf) > before)
+    assert.is_true(conf(float.state.thread_win).width <= 22)
+    assert.same({ "my draft" }, vim.api.nvim_buf_get_lines(float.state.input_buf, 0, -1, false))
+  end)
+
+  -- Conversation --------------------------------------------------------------
+
+  local function posting(body, post)
+    submit(body, post)
+    if not post then return end
+    local c = reply_thread(0)
+    c.status = "POSTED"
+    c.thread[1].body = body
+    return c
+  end
+
+  it("saving closes, posting stays and becomes the thread", function()
+    float.open_new(ctx, posting)
+    feed("idraft<Esc><CR>")
+    assert.is_nil(float.state)
+
+    float.open_new(ctx, posting)
+    feed("ihello<C-p>")
+    assert.truthy(float.state and float.state.thread_win)
+    assert.truthy(thread_text():find(" You\n hello", 1, true))
+    assert.same({ "" }, vim.api.nvim_buf_get_lines(float.state.input_buf, 0, -1, false))
+    assert.equals(float.state.input_win, vim.api.nvim_get_current_win())
+    assert.truthy(flat(conf(float.state.thread_win).title):find("● Posted", 1, true))
+    vim.cmd("stopinsert")
+    feed("q")
+    assert.is_nil(float.state)
+    assert.same({}, marked())
+  end)
+
+  it("stays open in the code after posting, until closed", function()
+    float.open_new(ctx, posting)
+    feed("ihello<C-p>")
+    vim.cmd("stopinsert")
+    vim.api.nvim_set_current_win(ctx.winid)
+    assert.truthy(float.state)
+    -- opening the same comment goes back to it
+    local win = float.state.input_win
+    float.open_thread(ctx, reply_thread(), submit)
+    assert.equals(win, vim.api.nvim_get_current_win())
+    -- another comment replaces it
+    vim.api.nvim_set_current_win(ctx.winid)
+    local other = reply_thread()
+    other.id = "c_2"
+    float.open_thread(ctx, other, submit)
+    assert.equals("c_2", float.state.comment.id)
+  end)
+
+  it("closes a conversation when its window shows another file, but not a draft", function()
+    vim.fn.writefile({ "b" }, repo .. "/b.txt")
+    for _, draft in ipairs({ false, true }) do
+      vim.cmd("edit " .. repo .. "/a.txt")
+      ctx = assert(context.current({ 2, 4 }))
+      float.open_new(ctx, posting)
+      feed("ihello<C-p>")
+      vim.cmd("stopinsert")
+      if draft then vim.api.nvim_buf_set_lines(float.state.input_buf, 0, -1, false, { "more" }) end
+      vim.api.nvim_set_current_win(ctx.winid)
+      vim.cmd("edit " .. repo .. "/b.txt")
+      vim.wait(100, function() return float.state == nil end)
+      assert.equals(draft, float.state ~= nil)
+      float.close()
+    end
+  end)
+
+  it("updates the open thread", function()
+    local c = reply_thread(1)
+    float.open_thread(ctx, c, submit)
+    vim.cmd("stopinsert")
+    vim.api.nvim_buf_set_lines(float.state.input_buf, 0, -1, false, { "typing" })
+    local new = vim.deepcopy(c)
+    table.insert(new.thread, { id = "m_x", author = "agent", body = "fresh", at = "3" })
+    float.update({ comments = { new } })
+    assert.truthy(thread_text():find("fresh", 1, true))
+    assert.same({ "typing" }, vim.api.nvim_buf_get_lines(float.state.input_buf, 0, -1, false))
+    assert.equals(float.state.input_win, vim.api.nvim_get_current_win())
+    -- a review without this comment, or with nothing new, changes nothing
+    float.update({ comments = {} })
+    assert.truthy(thread_text():find("fresh", 1, true))
+  end)
+
+  it("follows new messages only when already at the newest", function()
+    local c = reply_thread(20)
+    float.open_thread(ctx, c, submit)
+    vim.cmd("stopinsert")
+    local function add(id)
+      c = vim.deepcopy(c)
+      table.insert(c.thread, { id = id, author = "agent", body = "fresh", at = "3" })
+      float.update({ comments = { c } })
+    end
+    add("m_x")
+    assert.equals(vim.api.nvim_buf_line_count(float.state.thread_buf), info(float.state.thread_win).botline)
+    for _ = 1, 20 do feed("<C-b>") end
+    add("m_y")
+    assert.equals(1, info(float.state.thread_win).topline)
+    assert.truthy(flat(conf(float.state.thread_win).footer):find("▼", 1, true))
   end)
 end)

@@ -19,6 +19,8 @@ M.defaults = {
     save_normal = { "<CR>" },
     post = { "<C-p>" },
     cancel = { "q", "<Esc>" },
+    scroll_up = { "<C-b>" },
+    scroll_down = { "<C-f>" },
   },
   signs = { PENDING = "◌", POSTED = "●", RESPONDED = "◆", RESOLVED = "✓" },
 }

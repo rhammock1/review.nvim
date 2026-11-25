@@ -38,13 +38,18 @@ local function announce_agent_replies(old, new)
   for _, c in ipairs(new.comments or {}) do
     local n = 0
     for _, m in ipairs(c.thread) do if m.author == "agent" then n = n + 1 end end
-    if not c.deleted and n > (before[c.id] or 0) then
+    if not c.deleted and n > (before[c.id] or 0) and not float.showing(c.id) then
       notify(string.format("agent replied on %s:%d", vim.fs.basename(c.path), c.line_start))
     end
   end
 end
 
 local save
+
+local function redraw(s)
+  marks.refresh_all(s.review, s.toplevel)
+  float.update(s.review)
+end
 
 local function start_watch(s)
   watch.start(s.path, function(disk)
@@ -57,7 +62,7 @@ local function start_watch(s)
     if not vim.deep_equal(s.review, merge.merge(disk, disk)) then
       save(s)
     else
-      marks.refresh_all(s.review, s.toplevel)
+      redraw(s)
     end
   end)
 end
@@ -98,7 +103,7 @@ function save(s)
     return false
   end
   s.review = res
-  marks.refresh_all(s.review, s.toplevel)
+  redraw(s)
   start_watch(s)
   return true
 end
@@ -114,13 +119,17 @@ local function keep_text(body, why)
   notify(why .. "; your text is in the unnamed register (paste with p)", vim.log.levels.WARN)
 end
 
+--- Add a reply. Returns the comment when it was posted, so its thread stays open.
+local function reply(s, id, body, post)
+  local live = model.find(s.review, id)
+  if not live or live.deleted then return keep_text(body, "that comment is gone") end
+  model.reply(live, body, post)
+  save(s)
+  return post and model.find(s.review, id) or nil
+end
+
 local function open_thread(s, ctx, c)
-  float.open_thread(ctx, c, function(body, post)
-    local live = model.find(s.review, c.id)
-    if not live or live.deleted then return keep_text(body, "that comment is gone") end
-    model.reply(live, body, post)
-    save(s)
-  end)
+  float.open_thread(ctx, c, function(body, post) return reply(s, c.id, body, post) end)
 end
 
 --- New comment on the line/range, or the existing thread when the cursor
@@ -137,10 +146,16 @@ function M.comment(range)
     local existing = comment_under_cursor(s)
     if existing then return open_thread(s, ctx, existing) end
   end
+  local id -- set once posted: the popup then holds that comment's thread
   float.open_new(ctx, function(body, post)
+    if id then return reply(s, id, body, post) end
     if not s.review.base and ctx.base then s.review.base = ctx.base end
-    table.insert(s.review.comments, model.new_comment(ctx, body, post))
+    local c = model.new_comment(ctx, body, post)
+    table.insert(s.review.comments, c)
     save(s)
+    if not post then return end
+    id = c.id
+    return model.find(s.review, id)
   end)
 end
 
@@ -166,7 +181,8 @@ end
 function M.resolve()
   local s = current_session()
   if not s then return end
-  local c = comment_under_cursor(s)
+  local _, id = float.inside()
+  local c = id and model.find(s.review, id) or comment_under_cursor(s)
   if not c then return notify("no comment here") end
   model.resolve(c)
   save(s)
@@ -242,6 +258,8 @@ end
 
 function M.list(show_resolved)
   if float.hold_draft() then return end
+  -- Jumping from the list would open the file inside the popup.
+  if float.inside() then float.close() end
   local s = current_session()
   if not s then return end
   local function live(c) return model.find(s.review, c.id) or c end

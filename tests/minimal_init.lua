@@ -6,3 +6,4 @@ vim.opt.runtimepath:append(lazy .. "/diffview.nvim")
 vim.opt.runtimepath:append(lazy .. "/telescope.nvim")
 vim.opt.swapfile = false
 vim.cmd("runtime plugin/plenary.vim")
+package.path = root .. "/tests/?.lua;" .. package.path

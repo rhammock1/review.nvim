@@ -58,8 +58,7 @@ function M.show(ctx, comment)
     width = width, height = #lines, style = "minimal", border = "rounded", focusable = false, noautocmd = true,
     title = title, title_pos = "left", footer = footer, footer_pos = "right",
   })
-  vim.wo[M.win].wrap = false
-  vim.wo[M.win].winhighlight = "FloatBorder:ReviewBorder"
+  float.win_options(M.win, { wrap = false, winhighlight = "FloatBorder:ReviewBorder" })
 
   augroup = api.nvim_create_augroup("review_peek", { clear = true })
   api.nvim_create_autocmd({ "CursorMoved", "CursorMovedI", "InsertEnter", "WinLeave", "BufLeave", "WinScrolled" }, {

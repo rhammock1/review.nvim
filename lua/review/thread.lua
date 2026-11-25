@@ -23,6 +23,7 @@ local function hang(line)
 end
 
 local function wrap_line(line, width, out)
+  line = line:match("^(.*%S)") or ""
   local prefix = hang(line)
   local cur, has_word = line:match("^%s*"), false
   for gap, word in line:gmatch("(%s*)(%S+)") do
@@ -35,7 +36,7 @@ local function wrap_line(line, width, out)
       cur = cur .. gap .. word
     end
   end
-  table.insert(out, (cur:gsub("%s+$", "")))
+  table.insert(out, cur)
 end
 
 --- Wrap at spaces only, so references like `types.ts:93` stay whole. Fenced
@@ -103,16 +104,18 @@ end
 
 --- Mark `file.ext:line` references in a display line.
 local function mark_refs(line, row, marks)
-  local from = 1
-  while true do
-    local a, b = line:find("[%w_./@-]+%.%a%w*:%d+", from)
-    if not a then return end
-    local range = line:match("^%-%d+", b + 1)
-    if range then b = b + #range end
-    if not line:sub(a, b):match("^//") and line:sub(a - 1, a - 1) ~= ":" then
-      table.insert(marks, { row = row, col = a - 1, opts = { end_col = b, hl_group = "ReviewRef", priority = 200 } })
+  for at, word in line:gmatch("()(%S+)") do
+    -- The pattern backtracks badly on very long words, which aren't references.
+    local from = #word <= 300 and not word:find("://", 1, true) and 1 or nil
+    while from do
+      local a, b = word:find("[%w_./@-]+%.%a%w*:%d+", from)
+      if not a then break end
+      local range = word:match("^%-%d+", b + 1)
+      if range then b = b + #range end
+      table.insert(marks, { row = row, col = at + a - 2,
+        opts = { end_col = at + b - 1, hl_group = "ReviewRef", priority = 200 } })
+      from = b + 1
     end
-    from = b + 1
   end
 end
 

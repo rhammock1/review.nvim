@@ -102,4 +102,12 @@ describe("merge", function()
       { msg("m_1", "user", "original", "2026-11-25T10:00:00Z") }) })
     assert.equals("original", merge(disk, mine).comments[1].thread[1].body)
   end)
+
+  it("tolerates non-string times", function()
+    local function c(at, up) return { comments = { { id = "c_1", status = "POSTED", updated_at = up,
+      thread = { { id = "m_1", author = "user", body = "q", at = "2026-11-25T10:00:00Z" },
+                 { id = "m_2", author = "agent", body = "a", at = at } } } } } end
+    local out = require("review.merge").merge(c(5, 7), c("2026-11-25T10:00:01Z", "2026-11-25T10:00:00Z"))
+    assert.equals(2, #out.comments[1].thread)
+  end)
 end)

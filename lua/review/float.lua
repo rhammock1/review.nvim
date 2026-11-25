@@ -34,12 +34,31 @@ local STATUS = { PENDING = "Draft", POSTED = "Posted", RESPONDED = "Replied", RE
 
 local function valid(win) return win ~= nil and api.nvim_win_is_valid(win) end
 
+--- Set options on this window only. vim.wo also changes the global value,
+--- which windows opened later would pick up.
+---@param win integer
+---@param opts table<string, any>
+function M.win_options(win, opts)
+  for name, value in pairs(opts) do
+    api.nvim_set_option_value(name, value, { scope = "local", win = win })
+  end
+end
+
+local function status_group(status)
+  return STATUS[status] and "Review" .. status or "ReviewTime"
+end
+
+--- Is the cursor in this popup?
+local function focused(s)
+  local w = api.nvim_get_current_win()
+  return w == s.input_win or w == s.thread_win
+end
+
 function M.close()
   local s = M.state
   if not s then return end
   M.state = nil
-  local cur = api.nvim_get_current_win()
-  local inside = cur == s.input_win or cur == s.thread_win
+  local inside = focused(s)
   pcall(api.nvim_del_augroup_by_id, s.augroup)
   pcall(api.nvim_buf_clear_namespace, s.ctx.bufnr, ns, 0, -1)
   for _, w in ipairs({ s.input_win, s.thread_win }) do
@@ -83,10 +102,12 @@ function M.inside()
   return true, s.comment and s.comment.id
 end
 
---- Is this comment's thread open?
+--- Can the user see this comment's thread right now?
 function M.showing(id)
   local s = M.state
   return s ~= nil and s.comment ~= nil and s.comment.id == id and valid(s.thread_win)
+    and api.nvim_win_get_tabpage(s.thread_win) == api.nvim_get_current_tabpage()
+    and not api.nvim_win_get_config(s.thread_win).hide
 end
 
 -- Frame text -----------------------------------------------------------------
@@ -118,7 +139,7 @@ local function title(s)
     local status = s.comment.status
     local sign = config.options.signs[status] or ""
     left = { { " " .. (sign ~= "" and sign .. " " or "") .. (STATUS[status] or tostring(status)) .. " ",
-      "Review" .. tostring(status) } }
+      status_group(status) } }
   else
     left = { { s.initial ~= "" and " Edit comment " or " New comment ", "ReviewYou" } }
   end
@@ -245,7 +266,11 @@ end
 local function set_top(s, top)
   top = math.max(math.min(top, last_top(s)), 1)
   api.nvim_win_call(s.thread_win, function()
-    vim.fn.winrestview({ topline = top, lnum = top, col = 0, leftcol = 0, skipcol = 0 })
+    local view = { topline = top, leftcol = 0, skipcol = 0 }
+    -- Leave the cursor where it is when it's still in view.
+    local lnum = vim.fn.line(".")
+    if lnum < top or lnum >= top + api.nvim_win_get_height(s.thread_win) then view.lnum, view.col = top, 0 end
+    vim.fn.winrestview(view)
   end)
 end
 
@@ -261,8 +286,12 @@ end
 
 local function draw_thread(s)
   local lines, marks = thread.render(s.comment, s.width)
+  -- Replace only what changed, so a cursor or selection in the thread stays put.
+  local old = api.nvim_buf_get_lines(s.thread_buf, 0, -1, false)
+  local same = 0
+  while same < #old and same < #lines and old[same + 1] == lines[same + 1] do same = same + 1 end
   vim.bo[s.thread_buf].modifiable = true
-  api.nvim_buf_set_lines(s.thread_buf, 0, -1, false, lines)
+  api.nvim_buf_set_lines(s.thread_buf, same, -1, false, vim.list_slice(lines, same + 1))
   vim.bo[s.thread_buf].modifiable = false
   api.nvim_buf_clear_namespace(s.thread_buf, ns, 0, -1)
   for _, m in ipairs(marks) do
@@ -285,7 +314,7 @@ end
 local function draw_range(s)
   if not api.nvim_buf_is_valid(s.ctx.bufnr) then return end
   api.nvim_buf_clear_namespace(s.ctx.bufnr, ns, 0, -1)
-  local group = s.comment and ("Review" .. tostring(s.comment.status)) or "ReviewYou"
+  local group = s.comment and status_group(s.comment.status) or "ReviewYou"
   for l = s.ctx.line_start, math.min(s.ctx.line_end, api.nvim_buf_line_count(s.ctx.bufnr)) do
     pcall(api.nvim_buf_set_extmark, s.ctx.bufnr, ns, l - 1, 0,
       { sign_text = "▎", sign_hl_group = group, number_hl_group = group, priority = 30 })
@@ -296,17 +325,31 @@ local function width_for(ctx)
   return math.max(math.min(MAX_WIDTH, M.text_width(ctx.winid) - 2), 1)
 end
 
+--- Are the commented lines scrolled out of view?
+local function offscreen(s)
+  return s.ctx.line_end < vim.fn.line("w0", s.ctx.winid) or s.ctx.line_start > vim.fn.line("w$", s.ctx.winid)
+end
+
+--- Update where the commented lines are now.
+local function relocate(s)
+  if not s.comment or not api.nvim_buf_is_valid(s.ctx.bufnr) then return end
+  local loc = anchor.locate(api.nvim_buf_get_lines(s.ctx.bufnr, 0, -1, false), s.comment)
+  if not loc.moved then s.ctx.line_start, s.ctx.line_end = loc.start, loc.finish end
+end
+
 --- Size and place the popup. `follow` keeps the newest message in view.
 local function apply_layout(s, follow)
   if M.state ~= s or not valid(s.ctx.winid) or not valid(s.input_win) then return end
   if s.thread_win and not valid(s.thread_win) then s.thread_win = nil end
+  -- Out of the way while its code is scrolled off, unless the cursor is in it.
+  local hide = offscreen(s) and not focused(s)
   local width = width_for(s.ctx)
   local rewrap = width ~= s.width
   s.width = width
 
   local top
   if s.thread_win then
-    follow = follow or at_bottom(s)
+    follow = follow or (at_bottom(s) and api.nvim_get_current_win() ~= s.thread_win)
     top = vim.fn.getwininfo(s.thread_win)[1].topline
     api.nvim_win_set_width(s.thread_win, width)
     if rewrap then draw_thread(s) end
@@ -318,7 +361,7 @@ local function apply_layout(s, follow)
   local pos
   pos, thread_h, input_h = fit(s, thread_h, input_h)
 
-  local base = { relative = "win", win = s.ctx.winid, bufpos = { pos.line, 0 }, col = 0, width = width }
+  local base = { relative = "win", win = s.ctx.winid, bufpos = { pos.line, 0 }, col = 0, width = width, hide = hide }
   local row = pos.row
   if s.thread_win then
     api.nvim_win_set_config(s.thread_win, vim.tbl_extend("force", base, {
@@ -346,9 +389,8 @@ local function open_win(s, buf, enter, border)
   local win = api.nvim_open_win(buf, enter, { relative = "win", win = s.ctx.winid,
     bufpos = { s.ctx.line_end - 1, 0 }, row = 1, col = 0, width = s.width, height = 1,
     style = "minimal", border = border })
-  local o = vim.wo[win]
-  o.wrap, o.winfixbuf, o.scrolloff = true, true, 0
-  o.winhighlight = "FloatBorder:ReviewBorder"
+  M.win_options(win, { wrap = true, winfixbuf = true, scrolloff = 0, foldenable = false,
+    winhighlight = "FloatBorder:ReviewBorder" })
   return win
 end
 
@@ -368,6 +410,7 @@ local function show_thread(s, follow)
     })
   end
   draw_thread(s)
+  relocate(s)
   draw_range(s)
   apply_layout(s, follow)
 end
@@ -381,7 +424,7 @@ function M.update(review)
   if not c or (c.status == s.comment.status and vim.deep_equal(c.thread, s.comment.thread)) then return end
   s.comment = vim.deepcopy(c)
   if not valid(s.thread_win) or not valid(s.ctx.winid) then return end
-  show_thread(s, at_bottom(s))
+  show_thread(s, at_bottom(s) and api.nvim_get_current_win() ~= s.thread_win)
 end
 
 local function scroll(s, dir)
@@ -430,7 +473,7 @@ local function open(ctx, comment, on_submit, initial)
     -- Posting keeps the popup open as a conversation.
     local posted = on_submit(body, true)
     if M.state ~= s then return end
-    if not posted or not valid(s.input_win) then return M.close() end
+    if not posted or not valid(s.input_win) or not valid(s.ctx.winid) then return M.close() end
     s.comment, s.initial, s.pinned = vim.deepcopy(posted), "", true
     api.nvim_buf_set_lines(s.input_buf, 0, -1, false, { "" })
     draw_placeholder(s)
@@ -449,7 +492,7 @@ local function open(ctx, comment, on_submit, initial)
     api.nvim_buf_set_lines(s.input_buf, 0, -1, false, vim.split(initial, "\n", { plain = true }))
   end
   s.input_win = open_win(s, s.input_buf, true, FULL)
-  vim.wo[s.input_win].statuscolumn = " " -- lines the text up with the thread
+  M.win_options(s.input_win, { statuscolumn = " " }) -- lines the text up with the thread
 
   local o = { buffer = s.input_buf, nowait = true, silent = true }
   local post_default = config.options.post_on_submit
@@ -480,15 +523,26 @@ local function open(ctx, comment, on_submit, initial)
   on("WinEnter", {}, function()
     local w = api.nvim_get_current_win()
     if vim.w[w].review_help then return end
-    if M.state ~= s or w == s.input_win or w == s.thread_win then return end
+    if M.state ~= s then return end
+    if focused(s) then return apply_layout(s) end
     -- A conversation stays open, and so does unsaved text, so leaving can't lose it.
-    if s.pinned and valid(s.input_win) then return end
-    if not has_draft(s) then M.close() end
+    if (s.pinned and valid(s.input_win)) or has_draft(s) then return apply_layout(s) end
+    M.close()
+  end)
+  on("WinScrolled", { pattern = tostring(ctx.winid) }, function()
+    vim.schedule(function() apply_layout(s) end)
+  end)
+  -- :q, :only and :tabclose skip our own close; don't lose what was typed.
+  on("WinClosed", { pattern = tostring(s.input_win) }, function()
+    if M.state ~= s or not has_draft(s) then return end
+    vim.fn.setreg('"', body_of(s.input_buf))
+    vim.notify("review: popup closed; your text is in the unnamed register (paste with p)", vim.log.levels.WARN)
   end)
   -- Don't float over a different file.
   on({ "BufWinEnter", "WinClosed" }, {}, function()
     vim.schedule(function()
       if M.state ~= s or has_draft(s) then return end
+      if not valid(s.input_win) then return M.close() end
       if not valid(ctx.winid) or api.nvim_win_get_buf(ctx.winid) ~= ctx.bufnr then M.close() end
     end)
   end)

@@ -6,6 +6,9 @@
 --   * status/updated_at come from whichever side was updated later (tie: mine)
 local M = {}
 
+-- Times are strings, but the file can be edited by hand or by an agent.
+local function time(v) return v == nil and "" or tostring(v) end
+
 local function merge_thread(disk_thread, mine_thread)
   local by_id, order = {}, {}
   local function add(m, prefer)
@@ -23,7 +26,8 @@ local function merge_thread(disk_thread, mine_thread)
   local items = {}
   for i, id in ipairs(order) do items[i] = { msg = by_id[id], idx = i } end
   table.sort(items, function(a, b)
-    if a.msg.at ~= b.msg.at then return (a.msg.at or "") < (b.msg.at or "") end
+    local at, bt = time(a.msg.at), time(b.msg.at)
+    if at ~= bt then return at < bt end
     return a.idx < b.idx
   end)
   return vim.tbl_map(function(it) return it.msg end, items)
@@ -33,7 +37,7 @@ local function merge_comment(d, m)
   local out = vim.deepcopy(m)
   out.thread = merge_thread(d.thread, m.thread)
   if d.deleted or m.deleted then out.deleted = true end
-  local du, mu = d.updated_at or "", m.updated_at or ""
+  local du, mu = time(d.updated_at), time(m.updated_at)
   if du > mu then
     out.status = d.status
     out.updated_at = d.updated_at

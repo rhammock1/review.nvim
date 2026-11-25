@@ -51,7 +51,7 @@ function M.refresh(bufnr, review, toplevel)
     local sign = config.options.signs[c.status] or "?"
     pcall(vim.api.nvim_buf_set_extmark, bufnr, M.ns, item.loc.start - 1, 0, {
       sign_text = sign ~= "" and sign or nil,
-      sign_hl_group = "Review" .. c.status,
+      sign_hl_group = "Review" .. tostring(c.status),
       virt_text = { { label(c, item.loc.moved), "Comment" } },
       virt_text_pos = "eol",
       priority = 20,

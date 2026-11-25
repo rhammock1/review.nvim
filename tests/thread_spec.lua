@@ -102,4 +102,11 @@ describe("thread.render", function()
     local lines = thread.render(comment({ { id = "1", author = "agent", body = ("word "):rep(60) } }), 30, now)
     for _, l in ipairs(lines) do assert.is_true(vim.fn.strdisplaywidth(l) <= 29) end
   end)
+
+  it("is quick with very long words and trailing spaces", function()
+    local t = vim.uv.hrtime()
+    thread.render(comment({ { id = "1", author = "agent", body = ("a."):rep(30000) } }), 40, now)
+    thread.render(comment({ { id = "1", author = "agent", body = "x" .. (" "):rep(30000) } }), 40, now)
+    assert.is_true((vim.uv.hrtime() - t) / 1e9 < 0.5)
+  end)
 end)

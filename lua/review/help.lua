@@ -113,9 +113,9 @@ function M.open()
   })
   -- Mark the window before entering it, so the comment popup stays open underneath.
   vim.w[win].review_help = true
-  vim.wo[win].wrap = true
-  vim.wo[win].linebreak = true
-  vim.wo[win].breakindent = true
+  for _, name in ipairs({ "wrap", "linebreak", "breakindent" }) do
+    vim.api.nvim_set_option_value(name, true, { scope = "local", win = win })
+  end
   vim.api.nvim_set_current_win(win)
   -- Highlight section titles.
   for i, l in ipairs(lines) do

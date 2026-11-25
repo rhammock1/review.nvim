@@ -88,7 +88,8 @@ function M.write(path, review)
   local disk, err = M.read(path)
   if err then return false, err end
   local merged = merge.merge(disk, review)
-  vim.fn.mkdir(vim.fs.dirname(path), "p")
+  local made, mkerr = pcall(vim.fn.mkdir, vim.fs.dirname(path), "p")
+  if not made then return false, tostring(mkerr) end
   local tmp = string.format("%s.tmp-%d", path, vim.uv.os_getpid())
   local f, ferr = io.open(tmp, "w")
   if not f then return false, ferr end

@@ -53,6 +53,8 @@ local function redraw(s)
 end
 
 local function start_watch(s)
+  -- A popup can outlive its session (a branch switch); don't watch for a stale one.
+  if sessions[s.toplevel] ~= s then return end
   watch.start(s.path, function(disk)
     if sessions[s.toplevel] ~= s then return end
     local old = s.review
@@ -95,12 +97,11 @@ end
 
 function save(s)
   if not s.ignored then
-    store.ensure_ignored(s.toplevel)
-    s.ignored = true
+    s.ignored = pcall(store.ensure_ignored, s.toplevel)
   end
   local ok, res = store.write(s.path, s.review)
   if not ok then
-    notify(tostring(res), vim.log.levels.ERROR)
+    notify(tostring(res) .. " (not on disk yet; kept until the next save)", vim.log.levels.ERROR)
     return false
   end
   s.review = res
@@ -120,8 +121,16 @@ local function keep_text(body, why)
   notify(why .. "; your text is in the unnamed register (paste with p)", vim.log.levels.WARN)
 end
 
+--- The session now holding this review file: switching branches and back makes
+--- a new one, while an open popup still has the old.
+local function current(s)
+  local now = sessions[s.toplevel]
+  return now and now.path == s.path and now or s
+end
+
 --- Add a reply. Returns the comment when it was posted, so its thread stays open.
 local function reply(s, id, body, post)
+  s = current(s)
   local live = model.find(s.review, id)
   if not live or live.deleted then return keep_text(body, "that comment is gone") end
   model.reply(live, body, post)
@@ -150,6 +159,7 @@ function M.comment(range)
   local id -- set once posted: the popup then holds that comment's thread
   float.open_new(ctx, function(body, post)
     if id then return reply(s, id, body, post) end
+    s = current(s)
     if not s.review.base and ctx.base then s.review.base = ctx.base end
     local c = model.new_comment(ctx, body, post)
     table.insert(s.review.comments, c)
@@ -284,6 +294,7 @@ function M.list(show_resolved)
         local ctx = context.current()
         if not ctx then return end
         float.open_new(ctx, function(body)
+          s = current(s)
           local found = model.find(s.review, c.id)
           if not found or found.deleted then return keep_text(body, "that comment is gone") end
           if not model.edit_message(found, target.id, body) then

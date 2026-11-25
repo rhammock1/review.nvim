@@ -5,7 +5,7 @@ local function tool(name, missing_level, why)
   if vim.fn.executable(name) == 1 then
     vim.health.ok(name .. " found")
   else
-    vim.health[missing_level](name .. " not found: " .. why)
+    vim.health[missing_level](name .. " not found: install it; " .. why)
   end
 end
 
@@ -27,7 +27,7 @@ function M.check()
   if require("review.config").configured then
     vim.health.ok("setup() has run")
   else
-    vim.health.warn("setup() hasn't run, so there are no commands or keymaps: call require(\"review\").setup()")
+    vim.health.warn("setup() hasn't run, so only :ReviewInstall is available: call require(\"review\").setup() (lazy.nvim does this when the spec has opts)")
   end
   tool("git", "error", "review.nvim needs it for everything")
   tool("jq", "warn", "the agent's review-watch script needs it")
@@ -39,7 +39,10 @@ function M.check()
   for _, agent in ipairs(install.names()) do
     local target = install.agents[agent].target()
     local stat = vim.uv.fs_lstat(target)
-    if not stat then
+    local parent = vim.uv.fs_stat(vim.fs.dirname(vim.fs.dirname(target)))
+    if parent and parent.type ~= "directory" then
+      vim.health.warn(agent .. ": " .. vim.fs.dirname(vim.fs.dirname(target)) .. " isn't a directory, so the skill can't be installed")
+    elseif not stat then
       vim.health.info(agent .. ": not installed; run :ReviewInstall " .. agent)
     elseif vim.uv.fs_realpath(target) == vim.uv.fs_realpath(install.source(agent)) then
       vim.health.ok(agent .. ": installed at " .. target)

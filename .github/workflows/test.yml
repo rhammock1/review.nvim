@@ -31,8 +31,11 @@ jobs:
         nvim: [v0.11.7, stable] # the oldest supported, and the current release
     env:
       REVIEW_TEST_DEPS: ${{ github.workspace }}/../deps
+      REVIEW_REQUIRE_DIFFVIEW: "1"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Install Neovim
         run: |

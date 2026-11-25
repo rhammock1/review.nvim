@@ -10,6 +10,8 @@ end
 
 local dir = diffview_dir()
 if not dir then
+  -- CI installs Diffview; failing there beats silently skipping these tests.
+  assert(vim.env.REVIEW_REQUIRE_DIFFVIEW ~= "1", "diffview.nvim is required but wasn't found")
   describe("diffview", function() pending("diffview.nvim not installed") end)
   return
 end

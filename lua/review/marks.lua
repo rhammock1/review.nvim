@@ -65,11 +65,11 @@ function M.refresh_all(review, toplevel)
   end
 end
 
----@return review.Comment|nil
+---@return review.Comment|nil, { start: integer, finish: integer, moved: boolean }|nil
 function M.comment_at(bufnr, lnum, review, toplevel)
   if bufnr == 0 then bufnr = vim.api.nvim_get_current_buf() end
   for _, item in ipairs(located(bufnr, review, toplevel)) do
-    if lnum >= item.loc.start and lnum <= item.loc.finish then return item.comment end
+    if lnum >= item.loc.start and lnum <= item.loc.finish then return item.comment, item.loc end
   end
 end
 

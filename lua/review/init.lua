@@ -7,6 +7,7 @@ local git = require("review.git")
 local marks = require("review.marks")
 local merge = require("review.merge")
 local model = require("review.model")
+local peek = require("review.peek")
 local store = require("review.store")
 local watch = require("review.watch")
 
@@ -305,6 +306,18 @@ function M.list(show_resolved)
   }, { show_resolved = show_resolved == nil and config.options.show_resolved or show_resolved })
 end
 
+--- Preview the comment under the cursor.
+local function peek_here()
+  if float.state then return end
+  local win, buf = vim.api.nvim_get_current_win(), vim.api.nvim_get_current_buf()
+  local info = context.for_buffer(buf)
+  local s = info and sessions[info.toplevel]
+  if not s then return end
+  local c, loc = marks.comment_at(buf, vim.api.nvim_win_get_cursor(win)[1], s.review, s.toplevel)
+  if not c then return end
+  peek.show({ winid = win, bufnr = buf, line_start = loc.start, line_end = loc.finish }, c)
+end
+
 local function refresh_buf(buf)
   for top, s in pairs(sessions) do
     marks.refresh(buf, s.review, top)
@@ -349,6 +362,10 @@ function M.setup(opts)
     group = group,
     callback = function(a) vim.schedule(function() refresh_buf(a.buf) end) end,
   })
+  peek.close()
+  if config.options.peek then
+    vim.api.nvim_create_autocmd("CursorHold", { group = group, callback = peek_here })
+  end
   vim.api.nvim_create_autocmd("User", {
     group = group,
     pattern = { "DiffviewViewPostLayout", "DiffviewViewEnter" },

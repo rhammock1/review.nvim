@@ -6,6 +6,7 @@ M.defaults = {
   post_on_submit = false,
   export_target = "both", -- "buffer" | "clipboard" | "both"
   show_resolved = false,
+  peek = false, -- preview a comment when the cursor rests on it
   keymaps = {
     comment = "<leader>rc",
     thread = "<leader>rv",

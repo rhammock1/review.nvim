@@ -30,11 +30,12 @@ Needs Neovim 0.11 or newer (tested on 0.12). With [lazy.nvim](https://github.com
 1. Open a diff against your base branch, for example `:DiffviewOpen origin/main...HEAD --imply-local`. With `--imply-local`, the right side is your working tree. Comments work in ordinary file buffers too.
 2. On a line or a visual selection, press `<leader>rc` and type your comment.
    - `<CR>` (normal) or `<C-s>` (insert) saves it as a **pending** draft. The agent ignores drafts.
-   - `<C-p>` **posts** it right away.
-   - `q` / `<Esc>` (normal) cancels. Leaving the popup with text in it keeps it open.
+   - `<C-p>` **posts** it right away and keeps the popup open as a conversation: replies appear as they arrive, and you can keep posting.
+   - `q` / `<Esc>` (normal) cancels. Leaving the popup with text in it, or after posting, keeps it open.
 3. `<leader>rs` posts every pending comment, including draft replies.
 4. In Claude Code, say "watch my review comments". The `review-comments` skill runs `review-watch` and replies to each posted comment.
 5. Replies appear as `◆ 💬 2 · agent replied`. Press `<leader>rc` on that line to open the thread and reply. Your reply sets the comment back to POSTED, and the agent picks it up again.
+   - `<C-b>` / `<C-f>` scroll the thread from the reply box; `<C-w>k` / `<C-w>j` move between them.
 6. `<leader>rl` lists comments (Telescope). `<leader>re` exports Markdown.
 
 ## Statuses and signs
@@ -82,13 +83,17 @@ require("review").setup({
   post_on_submit = false,     -- true: the save keys post immediately
   export_target = "both",     -- "buffer" | "clipboard" | "both"
   show_resolved = false,
+  peek = false,               -- true: preview a comment when the cursor rests on it ('updatetime')
   keymaps = { comment = "<leader>rc", thread = "<leader>rv", list = "<leader>rl",
               submit = "<leader>rs", export = "<leader>re", help = "<leader>r?" },  -- false disables
   float_keymaps = { save_insert = { "<C-s>" }, save_normal = { "<CR>" },
-                    post = { "<C-p>" }, cancel = { "q", "<Esc>" } },
+                    post = { "<C-p>" }, cancel = { "q", "<Esc>" },
+                    scroll_up = { "<C-b>" }, scroll_down = { "<C-f>" } },
   signs = { PENDING = "◌", POSTED = "●", RESPONDED = "◆", RESOLVED = "✓" },
 })
 ```
+
+Colors come from your theme. Override any of these groups: `ReviewYou`, `ReviewAgent`, `ReviewRef`, `ReviewTime`, `ReviewKey`, `ReviewBorder`, `ReviewPENDING`, `ReviewPOSTED`, `ReviewRESPONDED`, `ReviewRESOLVED`.
 
 ## Agent side
 

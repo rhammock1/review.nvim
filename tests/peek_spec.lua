@@ -1,0 +1,113 @@
+local h = require("review_test_helpers")
+local review = require("review")
+local float = require("review.float")
+local peek = require("review.peek")
+local store = require("review.store")
+
+local function feed(keys)
+  vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes(keys, true, false, true), "x", false)
+end
+
+describe("peek", function()
+  local repo, file_win
+  before_each(function()
+    float.close()
+    peek.close()
+    review._reset()
+    vim.cmd("silent! %bwipeout!")
+    repo = h.repo("feat/x")
+    vim.cmd("cd " .. repo)
+    review.setup({ peek = true })
+    vim.cmd("edit " .. repo .. "/a.txt")
+    vim.api.nvim_win_set_cursor(0, { 3, 0 })
+    file_win = vim.api.nvim_get_current_win()
+    review.comment()
+    feed("i" .. ("many words here "):rep(30) .. "<C-p>")
+    float.close()
+  end)
+  after_each(function() peek.close() end)
+
+  local function hold() vim.api.nvim_exec_autocmds("CursorHold", {}) end
+  local function text()
+    return vim.api.nvim_buf_get_lines(vim.api.nvim_win_get_buf(peek.win), 0, -1, false)
+  end
+
+  it("is off by default", function()
+    review.setup({})
+    hold()
+    assert.is_nil(peek.win)
+  end)
+
+  it("previews at most three lines without taking focus", function()
+    hold()
+    assert.is_true(vim.api.nvim_win_is_valid(peek.win))
+    assert.equals(file_win, vim.api.nvim_get_current_win())
+    assert.is_false(vim.api.nvim_win_get_config(peek.win).focusable)
+    assert.equals(3, #text())
+    assert.truthy(text()[3]:find("…", 1, true))
+    local first = peek.win
+    hold()
+    assert.equals(first, peek.win)
+  end)
+
+  it("shows a short message whole, with the newest message's author", function()
+    local s = review._session(repo)
+    table.insert(s.review.comments[1].thread, { id = "m_a", author = "agent", body = "short", at = "2999-01-01T00:00:00Z" })
+    hold()
+    assert.same({ " short" }, text())
+    assert.equals("Agent", vim.trim(vim.api.nvim_win_get_config(peek.win).title[1][1]))
+  end)
+
+  it("shows nothing away from comments", function()
+    vim.api.nvim_win_set_cursor(0, { 7, 0 })
+    hold()
+    assert.is_nil(peek.win)
+  end)
+
+  it("closes on movement, insert, leaving, and a popup opening", function()
+    for _, event in ipairs({ "CursorMoved", "InsertEnter", "WinLeave", "BufLeave" }) do
+      hold()
+      local win = peek.win
+      assert.truthy(win)
+      vim.api.nvim_exec_autocmds(event, { buffer = 0 })
+      assert.is_nil(peek.win)
+      assert.is_false(vim.api.nvim_win_is_valid(win))
+    end
+    hold()
+    review.comment()
+    assert.is_nil(peek.win)
+    assert.truthy(float.state)
+  end)
+
+  it("stays away while a popup is open", function()
+    review.comment()
+    vim.cmd("stopinsert")
+    feed("imore<C-p>")
+    vim.api.nvim_set_current_win(file_win)
+    assert.truthy(float.state)
+    hold()
+    assert.is_nil(peek.win)
+  end)
+
+  it("skips resolved comments unless they are shown", function()
+    review.resolve()
+    hold()
+    assert.is_nil(peek.win)
+    review.setup({ peek = true, show_resolved = true })
+    hold()
+    assert.truthy(peek.win)
+  end)
+
+  it("survives a tiny window and an empty message", function()
+    local s = review._session(repo)
+    s.review.comments[1].thread = { { id = "m_a", author = "agent" } }
+    vim.cmd("vsplit | vertical resize 3")
+    vim.api.nvim_win_set_cursor(0, { 3, 0 })
+    hold()
+    peek.close()
+    s.review.comments[1].thread = {}
+    hold()
+    assert.is_nil(peek.win)
+    assert.truthy(store.active_path(repo, "feat/x"))
+  end)
+end)

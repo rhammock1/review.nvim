@@ -29,6 +29,7 @@ The user reviews diffs in Neovim (diffview) and leaves inline comments with revi
 
 - `side`: `"new"` means the code as it is now (the working tree when `worktree` is true). `"old"` means the pre-change code, i.e. lines the branch deleted or changed. For `old`, read the file at the comment's own `commit`, which is the left side's revision: `git show <commit>:<path>`. The top-level `base` is informational and may be null.
 - `deleted: true` marks a tombstone. Ignore it.
+- `working` is yours: a UTC timestamp saying you're on that comment. Neovim shows "Agent is working on it…" until you clear it, or for 15 minutes.
 - `draft: true` on a message means the user hasn't sent it yet. Ignore it.
 
 | Status | Set by | Meaning |
@@ -58,6 +59,17 @@ If the user asks for a one-off pass ("answer my review comments"), skip the watc
   - **Ambiguous:** ask a short clarifying question in the reply rather than guessing.
 - **Keep replies short and plain.** The user reads them in a small float next to the code.
 
+## Saying you're on it
+
+When you start on a comment that will take more than a few seconds (a change, or anything that needs exploring), first set `working` on it with the same atomic write, so the user sees you've picked it up:
+
+```bash
+jq --arg id "c_7f3a9b" --arg now "$(date -u +%Y-%m-%dT%H:%M:%SZ)" '
+  .comments |= map(if .id == $id then .working = $now else . end)' "$f" > "$f.tmp.$$" && mv "$f.tmp.$$" "$f"
+```
+
+Clear it in the same write as your reply (below). Skip it for quick answers.
+
 ## Writing back (exact rules)
 
 Neovim writes this file too, so:
@@ -66,6 +78,7 @@ Neovim writes this file too, so:
 2. **Only change these fields** on the comments you're answering:
    - Append one message: `{ "id": "m_<6 random hex>", "author": "agent", "body": "…", "at": "<UTC now, YYYY-MM-DDTHH:MM:SSZ>" }`
    - Set `"status": "RESPONDED"` and `"updated_at"` to the same UTC timestamp.
+   - Remove `working` if you set it.
 
    Don't modify, reorder, or delete anything else: no other comments, no user messages, no locations, snippets or top-level fields.
 3. **Write atomically:** write a temp file in the same directory, then `mv` it over the original. With jq:
@@ -76,7 +89,7 @@ now=$(date -u +%Y-%m-%dT%H:%M:%SZ); mid="m_$(openssl rand -hex 3)"
 jq --arg id "c_7f3a9b" --arg mid "$mid" --arg now "$now" --arg body "Your reply here" '
   .comments |= map(if .id == $id then
     .thread += [{id: $mid, author: "agent", body: $body, at: $now}]
-    | .status = "RESPONDED" | .updated_at = $now
+    | .status = "RESPONDED" | .updated_at = $now | del(.working)
   else . end)' "$f" > "$f.tmp.$$" && mv "$f.tmp.$$" "$f"
 ```
 

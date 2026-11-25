@@ -36,6 +36,7 @@ Run `:checkhealth review` if something doesn't work.
    - `q` / `<Esc>` (normal) cancels. Leaving the popup with text in it, or after posting, keeps it open.
 3. `<leader>rs` posts every pending comment, including draft replies.
 4. In Claude Code, say "watch my review comments". The `review-comments` skill runs `review-watch` and replies to each posted comment.
+   While the agent is on a comment, the thread and the line say it's working (if the agent marks it; the included skill does).
 5. Replies appear as `◆ 💬 2 · agent replied`. Press `<leader>rc` on that line to open the thread and reply. Your reply sets the comment back to POSTED, and the agent picks it up again.
    - In the thread, `gf` or `<CR>` on a reference like `src/a.ts:42` opens it: inside the diff when it shows that file, otherwise in the code window (or a new tab if that window is a diff).
    - `<C-b>` / `<C-f>` scroll the thread from the reply box; `<C-w>k` / `<C-w>j` move between them.

@@ -2,6 +2,7 @@ local anchor = require("review.anchor")
 local config = require("review.config")
 local context = require("review.context")
 local model = require("review.model")
+local thread = require("review.thread")
 
 local M = {}
 
@@ -21,6 +22,7 @@ local function label(c, moved)
   if c.status == "RESPONDED" and last and last.author == "agent" then
     s = s .. " · agent replied"
   end
+  if thread.working(c) then s = s .. " · agent working" end
   if moved then s = s .. " · moved?" end
   return s
 end

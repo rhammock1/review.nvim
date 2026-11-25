@@ -447,7 +447,8 @@ function M.update(review)
   local s = M.state
   if not s or not s.comment then return end
   local c = model.find(review, s.comment.id)
-  if not c or (c.status == s.comment.status and vim.deep_equal(c.thread, s.comment.thread)) then return end
+  if not c or (c.status == s.comment.status and c.working == s.comment.working
+    and vim.deep_equal(c.thread, s.comment.thread)) then return end
   s.comment = vim.deepcopy(c)
   if not valid(s.thread_win) or not valid(s.ctx.winid) then return end
   show_thread(s, at_bottom(s) and api.nvim_get_current_win() ~= s.thread_win)

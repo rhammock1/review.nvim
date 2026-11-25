@@ -2,7 +2,7 @@
 -- Neither input is mutated. Ownership rules:
 --   * comments and messages are unioned by id; tombstones (deleted) stick
 --   * location fields and user messages come from `mine`
---   * agent messages come from `disk`
+--   * agent messages and the agent's `working` mark come from `disk`
 --   * status/updated_at come from whichever side was updated later (tie: mine)
 local M = {}
 
@@ -37,6 +37,7 @@ local function merge_comment(d, m)
   local out = vim.deepcopy(m)
   out.thread = merge_thread(d.thread, m.thread)
   if d.deleted or m.deleted then out.deleted = true end
+  out.working = d.working -- set and cleared only by the agent
   local du, mu = time(d.updated_at), time(m.updated_at)
   if du > mu then
     out.status = d.status

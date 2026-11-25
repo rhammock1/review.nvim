@@ -109,4 +109,20 @@ describe("thread.render", function()
     thread.render(comment({ { id = "1", author = "agent", body = "x" .. (" "):rep(30000) } }), 40, now)
     assert.is_true((vim.uv.hrtime() - t) / 1e9 < 0.5)
   end)
+
+  it("says when the agent is working, until it's been a while", function()
+    local function working(at)
+      local c = comment({ { id = "1", author = "user", body = "q", at = "2026-11-25T21:00:00Z" } })
+      c.working = at
+      local lines = thread.render(c, 40, now)
+      return lines[#lines]
+    end
+    assert.equals(" Agent is working on it…", working("2026-11-25T21:08:00Z"))
+    assert.equals(" Agent is working on it…", working("2026-11-25T21:12:00Z"))
+    assert.equals(" q", working("2026-11-25T20:50:00Z"))
+    assert.equals(" q", working("soon"))
+    assert.equals(" q", working(nil))
+    assert.is_true(thread.working({ working = "2026-11-25T21:08:00Z" }, now))
+    assert.is_false(thread.working({ working = "2026-11-25T20:50:00Z" }, now))
+  end)
 end)

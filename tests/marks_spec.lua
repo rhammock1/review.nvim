@@ -77,4 +77,16 @@ describe("marks", function()
     assert.equals(c, marks.comment_at(buf, 4, r))
     assert.is_nil(marks.comment_at(buf, 6, r))
   end)
+
+  it("says when the agent is working", function()
+    local r = model.new_review("feat/x", nil, 1)
+    local c = comment("POSTED", 3, 3, "line 3")
+    c.working = model.now()
+    r.comments = { c }
+    marks.refresh(buf, r)
+    assert.truthy(extmarks()[1][4].virt_text[1][1]:find("agent working", 1, true))
+    c.working = "2000-01-01T00:00:00Z"
+    marks.refresh(buf, r)
+    assert.falsy(extmarks()[1][4].virt_text[1][1]:find("agent working", 1, true))
+  end)
 end)

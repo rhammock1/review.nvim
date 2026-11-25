@@ -110,4 +110,13 @@ describe("merge", function()
     local out = require("review.merge").merge(c(5, 7), c("2026-11-25T10:00:01Z", "2026-11-25T10:00:00Z"))
     assert.equals(2, #out.comments[1].thread)
   end)
+
+  it("takes the agent's working mark from disk", function()
+    local function rev(working)
+      return { comments = { { id = "c_1", status = "POSTED", updated_at = "1", working = working,
+        thread = { { id = "m_1", author = "user", body = "q", at = "1" } } } } }
+    end
+    assert.equals("2026-11-25T10:00:00Z", merge(rev("2026-11-25T10:00:00Z"), rev(nil)).comments[1].working)
+    assert.is_nil(merge(rev(nil), rev("2026-11-25T10:00:00Z")).comments[1].working)
+  end)
 end)

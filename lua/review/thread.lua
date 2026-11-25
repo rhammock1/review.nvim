@@ -92,6 +92,17 @@ function M.ago(iso, now)
   return iso:sub(1, 10)
 end
 
+local WORKING_FOR = 15 * 60
+
+--- Is the agent working on this comment? A mark older than this was most
+--- likely left by an agent that stopped.
+---@param comment review.Comment
+---@param now? integer
+function M.working(comment, now)
+  local t = epoch(comment.working)
+  return t ~= nil and (now or os.time()) - t < WORKING_FOR
+end
+
 ---@param m review.Message
 function M.name(m)
   return (names[m.author] or "Unknown") .. (m.draft and " (draft)" or ""), groups[m.author] or "ReviewTime"
@@ -160,6 +171,11 @@ function M.render(comment, width, now)
       table.insert(lines, l == "" and "" or " " .. l)
       mark_refs(lines[#lines], #lines - 1, marks)
     end
+  end
+  if M.working(comment, now) then
+    if #lines > 0 then table.insert(lines, "") end
+    table.insert(lines, " Agent is working on it…")
+    table.insert(marks, { row = #lines - 1, col = 1, opts = { end_col = #lines[#lines], hl_group = "ReviewTime", priority = 200 } })
   end
   if #lines == 0 then lines = { "" } end
   return lines, marks

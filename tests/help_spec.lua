@@ -1,0 +1,41 @@
+local help = require("review.help")
+local config = require("review.config")
+
+local function text() return table.concat(help.lines(), "\n") end
+
+describe("help", function()
+  before_each(function() config.setup() end)
+
+  it("lists global keymaps with what they do", function()
+    local t = text()
+    assert.truthy(t:find("<leader>rc", 1, true))
+    assert.truthy(t:find("New comment", 1, true))
+    assert.truthy(t:find("<leader>rs", 1, true))
+    assert.truthy(t:find("<leader>r?", 1, true))
+  end)
+
+  it("lists popup and picker keys and signs", function()
+    local t = text()
+    assert.truthy(t:find("<C-p>", 1, true))
+    assert.truthy(t:find("<M-h>", 1, true))
+    assert.truthy(t:find("◆", 1, true))
+  end)
+
+  it("reflects remapped and disabled keys", function()
+    config.setup({ keymaps = { comment = "<leader>xx", export = false }, float_keymaps = { post = { "<C-g>" } } })
+    local t = text()
+    assert.truthy(t:find("<leader>xx", 1, true))
+    assert.falsy(t:find("<leader>rc", 1, true))
+    assert.falsy(t:find("<leader>re", 1, true))
+    assert.truthy(t:find(":ReviewExport", 1, true))
+    assert.truthy(t:find("<C-g>", 1, true))
+  end)
+
+  it("opens a closable float", function()
+    local win = help.open()
+    assert.equals("editor", vim.api.nvim_win_get_config(win).relative)
+    assert.is_false(vim.bo[vim.api.nvim_win_get_buf(win)].modifiable)
+    vim.api.nvim_feedkeys("q", "x", false)
+    assert.is_false(vim.api.nvim_win_is_valid(win))
+  end)
+end)

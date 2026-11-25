@@ -41,6 +41,7 @@ you: <leader>rc on a line ──► .review/2026-11-25-feat-x-1.json ◄── a
 | `<leader>re` | `:ReviewExport` | Markdown to a buffer and/or clipboard |
 | | `:ReviewNew` | Start review `n+1` for this branch |
 | | `:ReviewResolve` | Resolve the comment under the cursor |
+| `<leader>r?` | `:ReviewHelp` | Keymap cheat-sheet popup |
 
 Keys in the Telescope picker:
 
@@ -63,7 +64,7 @@ require("review").setup({
   export_target = "both",     -- "buffer" | "clipboard" | "both"
   show_resolved = false,
   keymaps = { comment = "<leader>rc", thread = "<leader>rv", list = "<leader>rl",
-              submit = "<leader>rs", export = "<leader>re" },  -- set any to false to disable
+              submit = "<leader>rs", export = "<leader>re", help = "<leader>r?" },  -- false disables
   float_keymaps = { save_insert = { "<C-s>" }, save_normal = { "<CR>" },
                     post = { "<C-p>" }, cancel = { "q", "<Esc>" } },
   signs = { PENDING = "◌", POSTED = "●", RESPONDED = "◆", RESOLVED = "✓" },

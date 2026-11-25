@@ -296,6 +296,7 @@ local function set_keymaps()
   map("n", km.list, function() M.list() end, "Review: list comments")
   map("n", km.submit, M.submit, "Review: post pending comments")
   map("n", km.export, M.export, "Review: export markdown")
+  map("n", km.help, function() require("review.help").open() end, "Review: keymap cheat-sheet")
 end
 
 function M.setup(opts)
@@ -310,6 +311,7 @@ function M.setup(opts)
   cmd("ReviewExport", M.export, {})
   cmd("ReviewNew", M.new, {})
   cmd("ReviewResolve", M.resolve, {})
+  cmd("ReviewHelp", function() require("review.help").open() end, {})
   set_keymaps()
 
   local group = vim.api.nvim_create_augroup("review_nvim", { clear = true })

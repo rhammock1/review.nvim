@@ -46,5 +46,14 @@ jq '.comments[1].status = "POSTED"' "$f" > "$f.tmp"
 ( sleep 1; mv "$f.tmp" "$f" ) &
 out=$(timeout 10 "$RW" --interval 0.2 "$f"); check "blocking mode wakes on new post" 0 "c_bbbbbb" $? "$out"
 
+# a branch sharing the prefix (feat/x-extra → feat-x-extra) must not hijack feat/x's active file
+echo '{"comments":[{"id":"c_eeeeee","status":"POSTED","thread":[{"id":"m_e","author":"user","body":"x","at":"1"}]}]}' > "$repo/.review/2026-11-25-feat-x-extra-5.json"
+echo '{"comments":[{"id":"c_ffffff","status":"POSTED","thread":[{"id":"m_f","author":"user","body":"x","at":"1"}]}]}' > "$repo/.review/2026-11-26-feat-x-2.json"
+out=$("$RW" --once); check "active file ignores prefix-sharing branch" 0 "c_ffffff" $? "$out"
+
+# comment without a thread is tolerated (hand edit)
+echo '{"comments":[{"id":"c_nothrd","status":"POSTED"}]}' > "$repo/.review/nothread.json"
+out=$("$RW" --once "$repo/.review/nothread.json"); check "missing thread tolerated" 0 "c_nothrd" $? "$out"
+
 rm -rf "$tmp"
 [[ $fail == 0 ]] && echo "ALL PASS" || { echo "SOME FAILED"; exit 1; }

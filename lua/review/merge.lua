@@ -33,9 +33,18 @@ local function merge_comment(d, m)
   local out = vim.deepcopy(m)
   out.thread = merge_thread(d.thread, m.thread)
   if d.deleted or m.deleted then out.deleted = true end
-  if (d.updated_at or "") > (m.updated_at or "") then
+  local du, mu = d.updated_at or "", m.updated_at or ""
+  if du > mu then
     out.status = d.status
     out.updated_at = d.updated_at
+  elseif du == mu and d.status == "RESPONDED" and m.status ~= "RESOLVED" then
+    -- Timestamps have 1s resolution, so ties are common. The agent's answer
+    -- wins a tie unless the user has posted something after it.
+    local last
+    for i = #out.thread, 1, -1 do
+      if not out.thread[i].draft then last = out.thread[i] break end
+    end
+    if last and last.author == "agent" then out.status = "RESPONDED" end
   end
   return out
 end

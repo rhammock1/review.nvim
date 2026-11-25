@@ -76,6 +76,38 @@ describe("review (wiring)", function()
     assert.equals("POSTED", after.status)
   end)
 
+  it("watcher merges disk into memory instead of replacing it", function()
+    review.comment()
+    feed("ifirst<C-p>")
+    local path = current_file()
+    vim.wait(100)
+    -- file becomes unparseable; the next comment can't be saved but stays in memory
+    local good = h.read(path)
+    h.write(path, "{oops")
+    vim.wait(400)
+    local orig = vim.notify
+    vim.notify = function() end
+    vim.api.nvim_win_set_cursor(0, { 7, 0 })
+    review.comment()
+    feed("isecond<C-p>")
+    vim.notify = orig
+    -- someone repairs the file and an agent reply lands at the same time
+    local r = vim.json.decode(good)
+    local now = require("review.model").now()
+    table.insert(r.comments[1].thread, { id = "m_agentx", author = "agent", body = "ans", at = now })
+    r.comments[1].status = "RESPONDED"
+    r.comments[1].updated_at = now
+    h.write(path, vim.json.encode(r))
+    assert.is_true(vim.wait(2000, function()
+      local d = store.read(path)
+      return d and #d.comments == 2
+    end, 20), "unsaved comment was not written back after the watcher fired")
+    local d = store.read(path)
+    assert.equals(2, #d.comments[1].thread)
+    assert.equals("RESPONDED", d.comments[1].status)
+    assert.equals("second", d.comments[2].thread[1].body)
+  end)
+
   it("resolve under cursor", function()
     review.comment()
     feed("ix<C-p>")

@@ -5,6 +5,7 @@ local export = require("review.export")
 local float = require("review.float")
 local git = require("review.git")
 local marks = require("review.marks")
+local merge = require("review.merge")
 local model = require("review.model")
 local store = require("review.store")
 local watch = require("review.watch")
@@ -43,13 +44,21 @@ local function announce_agent_replies(old, new)
   end
 end
 
+local save
+
 local function start_watch(s)
   watch.start(s.path, function(disk)
     if sessions[s.toplevel] ~= s then return end
     local old = s.review
-    s.review = disk
-    announce_agent_replies(old, disk)
-    marks.refresh_all(s.review, s.toplevel)
+    -- Merge rather than replace: memory may hold user changes the disk lacks
+    -- (a save that failed, or a write the agent's copy raced over).
+    s.review = merge.merge(disk, old)
+    announce_agent_replies(old, s.review)
+    if not vim.deep_equal(s.review, merge.merge(disk, disk)) then
+      save(s)
+    else
+      marks.refresh_all(s.review, s.toplevel)
+    end
   end)
 end
 
@@ -78,7 +87,7 @@ local function current_session(range)
   return session_for(top, ctx and ctx.base), ctx
 end
 
-local function save(s)
+function save(s)
   if not s.ignored then
     store.ensure_ignored(s.toplevel)
     s.ignored = true

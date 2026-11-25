@@ -78,6 +78,23 @@ describe("merge", function()
     assert.same({ "c_a", "c_z" }, vim.tbl_map(function(c) return c.id end, out.comments))
   end)
 
+  it("tie: agent RESPONDED after last user message wins", function()
+    local u = msg("m_1", "user", "why?", "2026-11-25T10:00:00Z")
+    local mine = review({ comment("c_1", "POSTED", "2026-11-25T10:00:00Z", { u }) })
+    local disk = review({ comment("c_1", "RESPONDED", "2026-11-25T10:00:00Z",
+      { u, msg("m_2", "agent", "because", "2026-11-25T10:00:00Z") }) })
+    assert.equals("RESPONDED", merge(disk, mine).comments[1].status)
+  end)
+
+  it("tie: user reply after agent keeps POSTED", function()
+    local u = msg("m_1", "user", "why?", "2026-11-25T10:00:00Z")
+    local a = msg("m_2", "agent", "because", "2026-11-25T10:00:00Z")
+    local disk = review({ comment("c_1", "RESPONDED", "2026-11-25T10:00:00Z", { u, a }) })
+    local mine = review({ comment("c_1", "POSTED", "2026-11-25T10:00:00Z",
+      { u, a, msg("m_3", "user", "more", "2026-11-25T10:00:00Z") }) })
+    assert.equals("POSTED", merge(disk, mine).comments[1].status)
+  end)
+
   it("agent cannot clobber user text", function()
     local disk = review({ comment("c_1", "POSTED", "2026-11-25T10:00:00Z",
       { msg("m_1", "user", "TAMPERED", "2026-11-25T10:00:00Z") }) })

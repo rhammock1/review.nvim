@@ -58,8 +58,28 @@ function M.read(path)
   if not ok or type(data) ~= "table" then
     return nil, "review: can't parse " .. path .. ": " .. tostring(data)
   end
+  local function bad(why)
+    return nil, "review: malformed " .. path .. ": " .. why
+  end
+  if vim.islist(data) and #data > 0 then return bad("top level is not an object") end
   data.comments = data.comments or {}
-  for _, c in ipairs(data.comments) do c.thread = c.thread or {} end
+  if type(data.comments) ~= "table" or not vim.islist(data.comments) then
+    return bad("comments is not a list")
+  end
+  for i, c in ipairs(data.comments) do
+    if type(c) ~= "table" or type(c.id) ~= "string" then
+      return bad("comment #" .. i .. " has no id")
+    end
+    c.thread = c.thread or {}
+    if type(c.thread) ~= "table" or not vim.islist(c.thread) then
+      return bad("thread of " .. c.id .. " is not a list")
+    end
+    for _, m in ipairs(c.thread) do
+      if type(m) ~= "table" or type(m.id) ~= "string" then
+        return bad("a message in " .. c.id .. " has no id")
+      end
+    end
+  end
   return data, nil
 end
 

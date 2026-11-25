@@ -90,6 +90,22 @@ describe("store", function()
     assert.truthy(rerr)
   end)
 
+  it("parseable but malformed review is rejected, not thrown", function()
+    local review, p = store.load_active(repo, "feat/x", nil)
+    vim.fn.mkdir(store.dir(repo), "p")
+    for _, bad in ipairs({ '{"comments": "x"}', '{"comments": [{"status": "POSTED"}]}', '[1,2]',
+                           '{"comments": [{"id": "c_1", "thread": "nope"}]}' }) do
+      h.write(p, bad)
+      local r, err = store.read(p)
+      assert.is_nil(r)
+      assert.truthy(err)
+      local ok, werr = store.write(p, review)
+      assert.is_false(ok)
+      assert.truthy(werr)
+      assert.equals(bad, h.read(p))
+    end
+  end)
+
   it("records last_written mtime", function()
     local review, p = store.load_active(repo, "feat/x", nil)
     store.write(p, review)

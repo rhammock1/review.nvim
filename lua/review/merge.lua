@@ -1,5 +1,5 @@
 -- Merges the review file on disk with Neovim's in-memory copy.
--- Neither input is mutated. Ownership rules (see design doc):
+-- Neither input is mutated. Ownership rules:
 --   * comments and messages are unioned by id; tombstones (deleted) stick
 --   * location fields and user messages come from `mine`
 --   * agent messages come from `disk`

@@ -113,4 +113,6 @@ To add an agent, add an entry to `agents` in `lua/review/install.lua`.
 bash tests/review_watch_test.sh      # watcher script
 ```
 
-Design: `docs/2026-11-25-review-comments-design.md`. Plan: `docs/plans/2026-11-25-review-nvim.md`.
+## License
+
+[MIT](LICENSE)

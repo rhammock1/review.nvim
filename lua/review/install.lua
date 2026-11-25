@@ -51,7 +51,8 @@ function M.run(agent)
     end
     vim.notify("review: already installed at " .. target)
   else
-    vim.fn.mkdir(vim.fs.dirname(target), "p")
+    local made, mkerr = pcall(vim.fn.mkdir, vim.fs.dirname(target), "p")
+    if not made then return fail("can't create " .. vim.fs.dirname(target) .. ": " .. tostring(mkerr)) end
     local ok, err = vim.uv.fs_symlink(source, target, { dir = true })
     if not ok then return fail("can't link " .. target .. ": " .. tostring(err)) end
     vim.notify("review: installed " .. target)

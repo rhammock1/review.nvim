@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Tests for ~/scripts/bin/review-watch. Usage: bash tests/review_watch_test.sh [path/to/review-watch]
+# Tests for bin/review-watch. Usage: bash tests/review_watch_test.sh [path/to/review-watch]
 set -u
-RW="${1:-$HOME/scripts/bin/review-watch}"
+RW="${1:-$(cd "$(dirname "$0")/.." && pwd)/bin/review-watch}"
 fail=0
 check() { # name expected_code expected_stdout actual_code actual_stdout
   if [[ "$2" != "$4" || "$3" != "$5" ]]; then

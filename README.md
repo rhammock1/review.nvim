@@ -70,10 +70,21 @@ require("review").setup({
 })
 ```
 
-## Agent side (outside this repo)
+## Agent side
 
-- `~/scripts/bin/review-watch`: blocks until new posted comments appear, then prints their ids (`--once`, `--interval`, `FILE`). Tests are in `tests/review_watch_test.sh`.
-- `~/.claude/skills/review-comments/SKILL.md`: the file format, status rules, and the atomic-write recipe for the agent.
+- `bin/review-watch`: blocks until new posted comments appear, then prints their ids (`--once`, `--interval`, `FILE`). Needs `jq`. Tests are in `tests/review_watch_test.sh`.
+- `skills/review-comments/SKILL.md`: the file format, status rules, and the atomic-write recipe for the agent.
+
+Link both into place, with any directory on your `PATH` for the script (paths assume lazy.nvim's default install location):
+
+```bash
+R=~/.local/share/nvim/lazy/review.nvim
+mkdir -p ~/scripts/bin ~/.claude/skills
+ln -sn "$R/bin/review-watch" ~/scripts/bin/review-watch
+ln -sn "$R/skills/review-comments" ~/.claude/skills/review-comments
+```
+
+If you already have copies at those paths, move them aside first (for the skill, out of `~/.claude/skills`). `ln` won't replace a real directory; it would put the link inside it.
 
 ## Development
 

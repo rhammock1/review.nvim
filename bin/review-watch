@@ -1,0 +1,72 @@
+#!/usr/bin/env bash
+# review-watch — wait for newly POSTED review comments in a review.nvim file.
+#
+# Usage: review-watch [FILE] [--once] [--interval SECS]
+#   FILE        review JSON (default: active review for the current repo/branch:
+#               <toplevel>/.review/*-<branch with / → ->-<highest n>.json)
+#   --once      check once: print new ids and exit 0, or exit 1 if nothing new
+#   --interval  poll interval in seconds (default 2)
+#
+# Prints one comment id per line for every POSTED comment whose latest posted
+# user message hasn't been reported before, then exits 0. Seen state lives in
+# ${XDG_STATE_HOME:-~/.local/state}/review-watch/. Exit 2 on missing/invalid file.
+set -uo pipefail
+
+file="" once=0 interval=2
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --once) once=1 ;;
+    --interval) interval="$2"; shift ;;
+    -h|--help) sed -n '2,13p' "$0"; exit 0 ;;
+    *) file="$1" ;;
+  esac
+  shift
+done
+
+if [[ -z "$file" ]]; then
+  top=$(git rev-parse --show-toplevel 2>/dev/null) || { echo "review-watch: not in a git repo" >&2; exit 2; }
+  branch=$(git branch --show-current)
+  [[ -z "$branch" ]] && branch="detached-$(git rev-parse --short HEAD)"
+  slug="${branch//\//-}"
+  best=0
+  for f in "$top"/.review/????-??-??-"$slug"-*.json; do
+    [[ -e "$f" ]] || continue
+    name="${f##*/}"; rest="${name:11}"   # drop "YYYY-MM-DD-"
+    [[ "${rest:0:${#slug}+1}" == "$slug-" ]] || continue
+    n="${rest:${#slug}+1}"; n="${n%.json}"
+    [[ "$n" =~ ^[0-9]+$ ]] || continue   # rejects other branches sharing a prefix
+    if (( n > best )); then best=$n; file="$f"; fi
+  done
+  [[ -n "$file" ]] || { echo "review-watch: no review file for branch $branch in $top/.review" >&2; exit 2; }
+fi
+
+state_dir="${XDG_STATE_HOME:-$HOME/.local/state}/review-watch"
+mkdir -p "$state_dir"
+key=$(printf '%s' "$(cd "$(dirname "$file")" 2>/dev/null && pwd -P)/$(basename "$file")" | shasum | cut -c1-40)
+seen="$state_dir/$key"
+touch "$seen"
+
+check() {
+  [[ -f "$file" ]] || { echo "review-watch: missing $file" >&2; return 2; }
+  local keys
+  keys=$(jq -r '.comments[]
+      | select(.status == "POSTED" and (.deleted | not))
+      | "\(.id):\([(.thread // [])[] | select(.author == "user" and (.draft | not))] | last | .id)"' "$file" 2>/dev/null) \
+    || { echo "review-watch: invalid JSON in $file" >&2; return 2; }
+  local new=()
+  while IFS= read -r k; do
+    [[ -z "$k" ]] && continue
+    grep -qxF "$k" "$seen" || new+=("$k")
+  done <<< "$keys"
+  (( ${#new[@]} == 0 )) && return 1
+  printf '%s\n' "${new[@]}" >> "$seen"
+  printf '%s\n' "${new[@]%%:*}"
+  return 0
+}
+
+while true; do
+  check; rc=$?
+  if (( rc == 0 || rc == 2 )); then exit $rc; fi
+  (( once )) && exit 1
+  sleep "$interval"
+done

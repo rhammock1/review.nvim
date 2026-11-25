@@ -1,5 +1,5 @@
 local root = vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":p:h:h")
-local lazy = vim.fn.expand("~/.local/share/nvim/lazy")
+local lazy = vim.fn.stdpath("data") .. "/lazy"
 vim.opt.runtimepath:prepend(root)
 vim.opt.runtimepath:prepend(lazy .. "/plenary.nvim")
 vim.opt.runtimepath:append(lazy .. "/diffview.nvim")

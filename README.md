@@ -9,7 +9,7 @@ you: <leader>rc on a line ──► .review/2026-11-25-feat-x-1.json ◄── a
 
 ## Install
 
-With [lazy.nvim](https://github.com/folke/lazy.nvim):
+Needs Neovim 0.11 or newer (tested on 0.12). With [lazy.nvim](https://github.com/folke/lazy.nvim):
 
 ```lua
 {
@@ -27,7 +27,7 @@ With [lazy.nvim](https://github.com/folke/lazy.nvim):
 
 ## Workflow
 
-1. `<leader>gd` opens `DiffviewOpen origin/dev...HEAD --imply-local`. The right side is your working tree.
+1. Open a diff against your base branch, for example `:DiffviewOpen origin/main...HEAD --imply-local`. With `--imply-local`, the right side is your working tree. Comments work in ordinary file buffers too.
 2. On a line or a visual selection, press `<leader>rc` and type your comment.
    - `<CR>` (normal) or `<C-s>` (insert) saves it as a **pending** draft. The agent ignores drafts.
    - `<C-p>` **posts** it right away.

@@ -2,7 +2,7 @@
 local M = {}
 
 local links = {
-  ReviewYou = "DiagnosticInfo", ReviewAgent = "DiagnosticOk", ReviewRef = "Directory",
+  ReviewYou = "Function", ReviewAgent = "DiagnosticOk", ReviewRef = "Directory",
   ReviewTime = "Comment", ReviewKey = "Special", ReviewBorder = "FloatBorder",
 }
 for group, link in pairs(links) do

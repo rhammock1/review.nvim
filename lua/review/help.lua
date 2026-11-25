@@ -70,6 +70,8 @@ end
 --- Open the cheat-sheet in a centered float. q / <Esc> closes it.
 ---@return integer winid
 function M.open()
+  local cur = vim.api.nvim_get_current_win()
+  if vim.w[cur].review_help then return cur end
   local lines = M.lines()
   local width = 0
   for _, l in ipairs(lines) do width = math.max(width, vim.fn.strdisplaywidth(l)) end
@@ -79,7 +81,7 @@ function M.open()
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
   vim.bo[buf].modifiable = false
   vim.bo[buf].bufhidden = "wipe"
-  local win = vim.api.nvim_open_win(buf, true, {
+  local win = vim.api.nvim_open_win(buf, false, {
     relative = "editor", style = "minimal", border = "rounded",
     width = width, height = height,
     row = math.floor((vim.o.lines - height) / 2) - 1,
@@ -87,6 +89,9 @@ function M.open()
     title = " review.nvim ", title_pos = "center",
     footer = " q close ", footer_pos = "right",
   })
+  -- Mark the window before entering it, so the comment popup stays open underneath.
+  vim.w[win].review_help = true
+  vim.api.nvim_set_current_win(win)
   -- Highlight section titles.
   for i, l in ipairs(lines) do
     if l ~= "" and not l:match("^  ") then

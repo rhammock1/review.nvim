@@ -162,6 +162,7 @@ local function open(ctx, comment, on_submit, initial)
     group = state.augroup,
     callback = function()
       local w = vim.api.nvim_get_current_win()
+      if vim.w[w].review_help then return end
       if M.state == state and w ~= state.input_win and w ~= state.thread_win then M.close() end
     end,
   })

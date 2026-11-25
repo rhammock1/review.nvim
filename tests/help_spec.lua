@@ -38,4 +38,30 @@ describe("help", function()
     vim.api.nvim_feedkeys("q", "x", false)
     assert.is_false(vim.api.nvim_win_is_valid(win))
   end)
+
+  it("keeps a comment draft open underneath", function()
+    local float = require("review.float")
+    vim.cmd("enew")
+    float.open_new({
+      path = "a.txt", side = "new", line_start = 1, line_end = 1,
+      bufnr = vim.api.nvim_get_current_buf(), winid = vim.api.nvim_get_current_win(),
+    }, function() end)
+    vim.cmd("stopinsert")
+    local input_win, input_buf = float.state.input_win, float.state.input_buf
+    vim.api.nvim_buf_set_lines(input_buf, 0, -1, false, { "my draft" })
+
+    local win = help.open()
+    assert.is_true(vim.api.nvim_win_is_valid(win))
+    assert.equals(win, vim.api.nvim_get_current_win())
+    assert.is_true(vim.api.nvim_win_is_valid(input_win))
+
+    -- Opening it again reuses the window, so closing still returns to the draft.
+    assert.equals(win, help.open())
+
+    vim.api.nvim_feedkeys("q", "x", false)
+    assert.is_false(vim.api.nvim_win_is_valid(win))
+    assert.equals(input_win, vim.api.nvim_get_current_win())
+    assert.same({ "my draft" }, vim.api.nvim_buf_get_lines(input_buf, 0, -1, false))
+    float.close()
+  end)
 end)

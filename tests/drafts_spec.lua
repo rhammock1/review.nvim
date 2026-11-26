@@ -231,4 +231,21 @@ describe("drafts", function()
     type_text("x")
     assert.equals(tonumber("700", 8), bit.band(vim.uv.fs_stat(drafts.dir).mode, tonumber("777", 8)))
   end)
+
+  it("never hands sha256() a NUL byte, which Neovim 0.11 rejects", function()
+    local sha = vim.fn.sha256
+    vim.fn.sha256 = function(s)
+      assert(not s:find("%z"), "NUL in sha256 input")
+      return sha(s)
+    end
+    local ok, err = pcall(function()
+      drafts.save("a\0b", "x")
+      drafts.load("a\0b")
+      drafts.clear("a\0b")
+      float.open_new(ctx, submit)
+      type_text("y")
+    end)
+    vim.fn.sha256 = sha
+    assert(ok, err)
+  end)
 end)

@@ -15,7 +15,8 @@ local first_pending ---@type integer|nil when the oldest unwritten change came i
 local timer
 local swept
 
-local function hash(key) return vim.fn.sha256(key) end
+-- Neovim 0.11's sha256() can't take a NUL byte, so never pass one.
+local function hash(key) return vim.fn.sha256((key:gsub("%z", "\1"))) end
 local function own_file(key) return string.format("%s/%s-%d.json", M.dir, hash(key), M.pid) end
 
 --- Is the Neovim that wrote this copy still running? A copy from before the

@@ -472,7 +472,7 @@ end
 drafts_key = function(ctx, comment, key)
   local where = comment and ("comment " .. comment.id) or key
     or string.format("new %s:%d-%d %s", ctx.path, ctx.line_start, ctx.line_end, tostring(ctx.side))
-  return tostring(ctx.toplevel) .. "\0" .. where
+  return tostring(ctx.toplevel) .. "\n" .. where
 end
 
 local function open(ctx, comment, on_submit, initial, opts)

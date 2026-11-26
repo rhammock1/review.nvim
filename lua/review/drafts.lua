@@ -18,7 +18,12 @@ local swept
 local function hash(key) return vim.fn.sha256(key) end
 local function own_file(key) return string.format("%s/%s-%d.json", M.dir, hash(key), M.pid) end
 
-local function running(pid)
+--- Is the Neovim that wrote this copy still running? A copy from before the
+--- last restart isn't, even if another process now has its id.
+local function running(data)
+  local pid = tonumber(data.pid)
+  if not pid or pid <= 0 or pid ~= math.floor(pid) then return false end
+  if data.at < os.time() - vim.uv.uptime() then return false end
   if pid == M.pid then return true end
   local ok, err = vim.uv.kill(pid, 0)
   -- EPERM: it exists but belongs to someone else.
@@ -40,6 +45,7 @@ local function write(file, text)
     return
   end
   vim.fn.mkdir(M.dir, "p", tonumber("700", 8))
+  vim.uv.fs_chmod(M.dir, tonumber("700", 8))
   local tmp = file .. ".tmp"
   local f = io.open(tmp, "w")
   if not f then return end
@@ -91,7 +97,7 @@ function M.clear(key)
   os.remove(mine)
   for _, file in ipairs(vim.fn.glob(M.dir .. "/" .. hash(key) .. "-*.json", false, true)) do
     local data = read(file)
-    if not data or not running(tonumber(data.pid) or -1) then os.remove(file) end
+    if not data or not running(data) then os.remove(file) end
   end
 end
 
@@ -104,7 +110,7 @@ function M.load(key)
     local data = read(file)
     if not data or os.time() - data.at > MAX_AGE then
       os.remove(file)
-    elseif data.text ~= "" and not (data.pid ~= M.pid and running(tonumber(data.pid) or -1))
+    elseif data.text ~= "" and not (data.pid ~= M.pid and running(data))
       and (not best or data.at > best.at) then
       best = data
     end

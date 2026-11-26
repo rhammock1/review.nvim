@@ -202,4 +202,30 @@ describe("drafts", function()
     assert.equals(tonumber("700", 8), bit.band(vim.uv.fs_stat(drafts.dir).mode, tonumber("777", 8)))
     assert.equals(tonumber("600", 8), bit.band(vim.uv.fs_stat(files()[1]).mode, tonumber("777", 8)))
   end)
+
+  it("takes over copies from before the last restart, or with no usable process id", function()
+    float.open_new(ctx, submit)
+    type_text("before reboot")
+    crash()
+    local f = files()[1]
+    local stem = f:match("^(.*)%-%d+%.json$")
+    local boot = os.time() - vim.uv.uptime()
+    for _, case in ipairs({ { pid = 1, at = boot - 60 }, { pid = nil, at = os.time() }, { pid = -1, at = os.time() } }) do
+      for _, old in ipairs(files()) do os.remove(old) end
+      h.write(stem .. "-1.json", vim.json.encode({ text = "before reboot", at = case.at, pid = case.pid }))
+      float.open_new(ctx, submit)
+      assert.same({ "before reboot" }, input())
+      vim.cmd("stopinsert")
+      feed("<CR>")
+      drafts.flush()
+      assert.same({}, files())
+    end
+  end)
+
+  it("makes an existing folder private", function()
+    vim.fn.mkdir(drafts.dir, "p", tonumber("755", 8))
+    float.open_new(ctx, submit)
+    type_text("x")
+    assert.equals(tonumber("700", 8), bit.band(vim.uv.fs_stat(drafts.dir).mode, tonumber("777", 8)))
+  end)
 end)

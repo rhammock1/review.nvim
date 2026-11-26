@@ -209,8 +209,10 @@ describe("drafts", function()
     crash()
     local f = files()[1]
     local stem = f:match("^(.*)%-%d+%.json$")
-    local boot = os.time() - vim.uv.uptime()
-    for _, case in ipairs({ { pid = 1, at = boot - 60 }, { pid = nil, at = os.time() }, { pid = -1, at = os.time() } }) do
+    -- Pretend the machine restarted 30 seconds ago.
+    local uptime = vim.uv.uptime
+    vim.uv.uptime = function() return 30 end
+    for _, case in ipairs({ { pid = 1, at = os.time() - 90 }, { pid = nil, at = os.time() }, { pid = -1, at = os.time() } }) do
       for _, old in ipairs(files()) do os.remove(old) end
       h.write(stem .. "-1.json", vim.json.encode({ text = "before reboot", at = case.at, pid = case.pid }))
       float.open_new(ctx, submit)
@@ -220,6 +222,7 @@ describe("drafts", function()
       drafts.flush()
       assert.same({}, files())
     end
+    vim.uv.uptime = uptime
   end)
 
   it("makes an existing folder private", function()
